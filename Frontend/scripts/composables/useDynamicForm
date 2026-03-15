@@ -1,0 +1,736 @@
+<script>
+  const useDynamicForm = (addNewRecordFn, updateNewRecordFn, uploadAttachmentFn) => {
+    // Reactive state
+    const showDynamicFormDialog = ref(false);
+    const showEditModal = ref(false);
+    const showDynamicForm = ref(false);
+    const currentSchema = ref(null);
+    const formData = ref({});
+    const formRules = ref({});
+    const showSuccessModal = ref(false);
+    const showFormSelector = ref(false);
+    const submissionId = ref("");
+    const availableSchemas = ref([]);
+    const fileList = ref({});
+    const uploadingFiles = ref({});
+
+    // Helper function to set upload state
+    const setUploadState = (fieldName, isUploading) => {
+      uploadingFiles.value = { ...uploadingFiles.value, [fieldName]: isUploading };
+      console.log("setUploadState called:", fieldName, isUploading, uploadingFiles.value);
+    };
+
+    // Dynamic form generator using Vue's h function
+    const generateDynamicForm = (fields, formData, isReadOnly = false) => {
+      return h(
+        ElementPlus.ElForm,
+        {
+          model: formData,
+          labelWidth: "250px",
+          disabled: isReadOnly,
+          class: "dynamic-form",
+        },
+        () => {
+          const formItems = [];
+
+          fields.forEach((field) => {
+            const formItem = h(
+              ElementPlus.ElFormItem,
+              {
+                label: field.label || field.name,
+                key: field.name,
+                prop: field.name,
+                rules: field.required
+                  ? [
+                      {
+                        required: true,
+                        message: `${field.label || field.name} is required`,
+                        trigger: "blur",
+                      },
+                    ]
+                  : undefined,
+              },
+              () => {
+                return generateFieldComponent(field, formData, isReadOnly);
+              }
+            );
+
+            formItems.push(formItem);
+          });
+
+          return formItems;
+        }
+      );
+    };
+
+    // Generate individual field components
+    const generateFieldComponent = (field, formData, isReadOnly) => {
+      const fieldName = field.name;
+      const fieldType = field.type;
+
+      // Handle special fields (Timestamp, Submission ID)
+      if (fieldName === "Timestamp" || fieldName === "Submission ID") {
+        return h(ElementPlus.ElInput, {
+          modelValue: formData[fieldName],
+          "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+          readonly: true,
+          placeholder: fieldName === "Timestamp" ? "Auto-generated" : "Auto-generated ID",
+        });
+      }
+
+      // Handle different field types
+      switch (fieldType) {
+        case "text":
+        case "email":
+          return h(ElementPlus.ElInput, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            type: fieldType,
+            placeholder: field.placeholder || `Enter ${field.label || field.name}`,
+            disabled: isReadOnly,
+          });
+
+        case "number":
+        case "customPrice":
+          return h(ElementPlus.ElInputNumber, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            min: field.min || 0,
+            max: field.max,
+            precision: fieldType === "customPrice" ? 2 : 0,
+            placeholder: field.placeholder || `Enter ${field.label || field.name}`,
+            disabled: isReadOnly,
+          });
+
+        case "textarea":
+          return h(ElementPlus.ElInput, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            type: "textarea",
+            rows: field.rows || 3,
+            placeholder: field.placeholder || `Enter ${field.label || field.name}`,
+            disabled: isReadOnly,
+          });
+
+        case "select":
+          return h(
+            ElementPlus.ElSelect,
+            {
+              modelValue: formData[fieldName],
+              "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+              placeholder: field.placeholder || "Select option",
+              disabled: isReadOnly,
+            },
+            () => {
+              if (field.options_string) {
+                const options = field.options_string
+                  .split(/[,\n]/)
+                  .map((option) => option.trim())
+                  .filter((option) => option.length > 0);
+                return options.map((option) =>
+                  h(ElementPlus.ElOption, {
+                    key: option,
+                    label: option,
+                    value: option,
+                  })
+                );
+              }
+              return [];
+            }
+          );
+
+        case "radio":
+          return h(
+            ElementPlus.ElRadioGroup,
+            {
+              modelValue: formData[fieldName],
+              "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+              disabled: isReadOnly,
+            },
+            () => {
+              if (field.options_string) {
+                const options = field.options_string
+                  .split(/[,\n]/)
+                  .map((option) => option.trim())
+                  .filter((option) => option.length > 0);
+                return options.map((option) =>
+                  h(ElementPlus.ElRadio, {
+                    key: option,
+                    label: option,
+                    value: option,
+                  })
+                );
+              }
+              return [];
+            }
+          );
+        case "phone":
+          return h(ElementPlus.ElInput, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            type: "tel",
+            placeholder: field.placeholder || `Enter ${field.label || field.name}`,
+            disabled: isReadOnly,
+          });
+
+        case "toggle":
+          return h(ElementPlus.ElSwitch, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            activeText: field.label || field.name,
+            disabled: isReadOnly,
+          });
+
+        case "checkbox":
+          // Initialize formData[fieldName] as an array if it doesn't exist
+          if (!formData[fieldName]) {
+            formData[fieldName] = [];
+          }
+
+          if (field.options_string) {
+            // Split by comma and newline for display, but store as JSON string in Google Sheets
+            const options = field.options_string
+              .split(/[,\n]/)
+              .map((option) => option.trim())
+              .filter((option) => option.length > 0); // Remove empty options
+
+            console.log("Rendering checkbox group for field:", fieldName, "with options:", options, "current value:", formData[fieldName]);
+
+            return h(
+              ElementPlus.ElCheckboxGroup,
+              {
+                modelValue: formData[fieldName],
+                "onUpdate:modelValue": (value) => {
+                  console.log("Checkbox group value updated:", fieldName, "new value:", value);
+                  formData[fieldName] = value;
+                },
+                disabled: isReadOnly,
+              },
+              () =>
+                options.map((option) =>
+                  h(ElementPlus.ElCheckbox, {
+                    key: option,
+                    label: option,
+                    value: option,
+                  })
+                )
+            );
+          } else {
+            // Fallback to single checkbox if no options
+            return h(
+              ElementPlus.ElCheckbox,
+              {
+                modelValue: formData[fieldName],
+                "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+                disabled: isReadOnly,
+              },
+              () => field.label || field.name
+            );
+          }
+
+        case "date":
+          return h(ElementPlus.ElDatePicker, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            type: "date",
+            placeholder: field.placeholder || "Select date",
+            disabled: isReadOnly,
+          });
+
+        case "file":
+          console.log("Rendering file upload for field:", fieldName, "current value:", formData[fieldName]);
+          const isFileUploading = uploadingFiles.value[fieldName] || false;
+          console.log("File upload rendering - fieldName:", fieldName, "isFileUploading:", isFileUploading, "uploadingFiles:", uploadingFiles.value);
+          const hasFileUploaded = formData[fieldName] && typeof formData[fieldName] === "string" && formData[fieldName].startsWith("http");
+
+          return h("div", { class: "file-upload-container" }, [
+            h("input", {
+              type: "file",
+              class: "file-input",
+              "data-field": fieldName,
+              style: "display: none;",
+              onchange: async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                  console.log("File selected:", file);
+                  setUploadState(fieldName, true);
+                  try {
+                    await uploadAttachmentFn(file, fieldName);
+                    console.log("Upload completed for field:", fieldName);
+                  } catch (error) {
+                    console.error("Upload failed:", error);
+                    // Use ElementPlus message from global scope
+                    ElementPlus.ElMessage.error("File upload failed");
+                  } finally {
+                    setUploadState(fieldName, false);
+                  }
+                }
+              },
+            }),
+            h(
+              "button",
+              {
+                type: "button",
+                class: `el-button ${isFileUploading ? "el-button--info" : "el-button--primary"} file-upload-btn`,
+                disabled: isFileUploading,
+                onclick: () => {
+                  if (!isFileUploading) {
+                    const fileInput = document.querySelector(`input[data-field="${fieldName}"]`);
+                    if (fileInput) fileInput.click();
+                  }
+                },
+              },
+              isFileUploading ? [h("span", { class: "upload-spinner", style: "margin-right: 8px;" }, "⟳"), h("span", {}, "Uploading...")] : [h("span", { class: "upload-icon" }, "📁"), h("span", {}, hasFileUploaded ? "Change File" : "Upload File")]
+            ),
+            // Show file name with link when uploaded
+            hasFileUploaded
+              ? h(
+                  "div",
+                  {
+                    class: "file-preview",
+                    style: "margin-top: 8px; padding: 8px; background: #f5f7fa; border-radius: 4px; display: flex; align-items: center;",
+                  },
+                  [
+                    h(
+                      "span",
+                      {
+                        class: "file-icon",
+                        style: "margin-right: 8px; color: #409eff;",
+                      },
+                      "📄"
+                    ),
+                    h(
+                      "a",
+                      {
+                        href: formData[fieldName],
+                        target: "_blank",
+                        style: "color: #409eff; text-decoration: none; font-size: 14px;",
+                      },
+                      "View File"
+                    ),
+                    h(
+                      "span",
+                      {
+                        class: "file-tag",
+                        style: "margin-left: 8px; padding: 2px 8px; background: #e1f3d8; color: #529b2e; border-radius: 12px; font-size: 12px;",
+                      },
+                      "Uploaded"
+                    ),
+                  ]
+                )
+              : null,
+          ]);
+        case "image":
+          console.log("Rendering image upload for field:", fieldName, "current value:", formData[fieldName]);
+          const isImageUploading = uploadingFiles.value[fieldName] || false;
+          console.log("Image upload rendering - fieldName:", fieldName, "isImageUploading:", isImageUploading, "uploadingFiles:", uploadingFiles.value);
+          const hasImageUploaded = formData[fieldName] && typeof formData[fieldName] === "string" && formData[fieldName].startsWith("http");
+
+          return h("div", { class: "image-upload-container" }, [
+            h("input", {
+              type: "file",
+              class: "image-input",
+              "data-field": fieldName,
+              accept: "image/*",
+              style: "display: none;",
+              onchange: async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                  console.log("Image selected:", file);
+                  setUploadState(fieldName, true);
+                  try {
+                    await uploadAttachmentFn(file, fieldName);
+                    console.log("Image upload completed for field:", fieldName);
+                  } catch (error) {
+                    console.error("Upload failed:", error);
+                    ElementPlus.ElMessage.error("Image upload failed");
+                  } finally {
+                    setUploadState(fieldName, false);
+                  }
+                }
+              },
+            }),
+            h(
+              "div",
+              {
+                class: "el-upload el-upload--picture-card",
+                style: `width: 100px; height: 100px; border: 1px dashed #d9d9d9; border-radius: 6px; cursor: ${isImageUploading ? "not-allowed" : "pointer"}; display: flex; align-items: center; justify-content: center; position: relative; background: ${hasImageUploaded ? "transparent" : "#fafafa"};`,
+                onclick: () => {
+                  if (!isImageUploading) {
+                    const imageInput = document.querySelector(`input[data-field="${fieldName}"]`);
+                    if (imageInput) imageInput.click();
+                  }
+                },
+              },
+              [
+                // Show loading spinner during upload
+                ...(isImageUploading
+                  ? [
+                      h(
+                        "div",
+                        {
+                          style: "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2;",
+                        },
+                        [
+                          h(
+                            "span",
+                            {
+                              class: "upload-spinner",
+                              style: "font-size: 20px;",
+                            },
+                            "⟳"
+                          ),
+                        ]
+                      ),
+                      h(
+                        "div",
+                        {
+                          style: "position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #999;",
+                        },
+                        "Uploading..."
+                      ),
+                    ]
+                  : hasImageUploaded
+                  ? [
+                      // Show image thumbnail if uploaded
+                      h("img", {
+                        src: formData[fieldName],
+                        style: "width: 98px; height: 98px; object-fit: cover; border-radius: 4px;",
+                        alt: "Uploaded image",
+                      }),
+                      h(
+                        "div",
+                        {
+                          class: "image-overlay",
+                          style: "position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.3s; display: flex; align-items: center; justify-content: center; border-radius: 4px;",
+                          onmouseenter: (e) => (e.target.style.opacity = "1"),
+                          onmouseleave: (e) => (e.target.style.opacity = "0"),
+                        },
+                        [
+                          h(
+                            "span",
+                            {
+                              style: "color: white; font-size: 12px;",
+                            },
+                            "Change Image"
+                          ),
+                        ]
+                      ),
+                    ]
+                  : [
+                      // Show upload icon
+                      h(
+                        "div",
+                        {
+                          class: "el-upload__icon",
+                          style: "font-size: 28px; color: #8c939d;",
+                        },
+                        "+"
+                      ),
+                    ]),
+              ]
+            ),
+            // Show image tag when uploaded
+            hasImageUploaded
+              ? h(
+                  "div",
+                  {
+                    style: "margin-top: 8px; text-align: center;",
+                  },
+                  [
+                    h(
+                      "span",
+                      {
+                        class: "image-tag",
+                        style: "padding: 2px 8px; background: #e1f3d8; color: #529b2e; border-radius: 12px; font-size: 12px;",
+                      },
+                      "Image Uploaded"
+                    ),
+                  ]
+                )
+              : null,
+          ]);
+        default:
+          return h(ElementPlus.ElInput, {
+            modelValue: formData[fieldName],
+            "onUpdate:modelValue": (value) => (formData[fieldName] = value),
+            placeholder: field.placeholder || `Enter ${field.label || field.name}`,
+            disabled: isReadOnly,
+          });
+      }
+    };
+
+    // Check if any files are uploading
+    const isAnyFileUploading = Vue.computed(() => {
+      const result = Object.values(uploadingFiles.value).some((uploading) => uploading === true);
+      console.log("isAnyFileUploading computed:", result, uploadingFiles.value);
+      return result;
+    });
+
+    // Form submission handler
+    const submitDynamicForm = async () => {
+      // Prevent submission if files are still uploading
+      if (isAnyFileUploading.value) {
+        ElMessage.warning("Please wait for file uploads to complete before submitting");
+        return;
+      }
+      console.log("formData.value", formData.value);
+
+      // Prepare form data for submission - convert checkbox arrays to strings
+      const submissionData = { ...formData.value };
+
+      if (currentSchema.value && currentSchema.value.fields) {
+        currentSchema.value.fields.forEach((field) => {
+          if (field.type === "checkbox" && field.options_string && Array.isArray(submissionData[field.name])) {
+            // Convert checkbox array to JSON string for Google Sheets
+            submissionData[field.name] = JSON.stringify(submissionData[field.name]);
+            console.log("Converting checkbox array to JSON string:", field.name, "value:", submissionData[field.name]);
+          }
+        });
+      }
+
+      console.log("submissionData", submissionData);
+
+      // Add any validation logic here
+      showEditModal.value = false;
+      try {
+        if (submissionData.id) {
+          // Get sheet name from current schema
+          const sheetName = currentSchema.value?.targetSheetName;
+          await updateNewRecordFn(submissionData.id, submissionData, sheetName);
+        } else {
+          // Get sheet name from current schema
+          const sheetName = currentSchema.value?.targetSheetName;
+          await addNewRecordFn(submissionData, sheetName);
+        }
+        showSuccessModal.value = true;
+      } catch (error) {
+        ElMessage.error("Failed to submit form");
+      }
+    };
+
+    // Initialize form with data for editing
+    const initializeFormWithData = (initialData) => {
+      if (initialData && typeof initialData === "object") {
+        // Clear existing form data
+        formData.value = {};
+        // Set initial values
+        Object.keys(initialData).forEach((key) => {
+          const value = initialData[key];
+
+          // Handle checkbox fields that might have string values from database
+          if (currentSchema.value && currentSchema.value.fields) {
+            const field = currentSchema.value.fields.find((f) => f.name === key);
+            if (field && field.type === "checkbox" && field.options_string) {
+              // Convert string value to array for checkbox groups
+              if (typeof value === "string" && value) {
+                try {
+                  // Try to parse as JSON string first (new format)
+                  const parsedOptions = JSON.parse(value);
+                  if (Array.isArray(parsedOptions)) {
+                    formData.value[key] = parsedOptions;
+                    console.log("Parsed checkbox JSON string to array:", key, "string value:", value, "parsed array:", parsedOptions);
+                  } else {
+                    // Fallback: try comma-separated parsing (legacy format)
+                    const legacyOptions = value
+                      .split(",")
+                      .map((option) => option.trim())
+                      .filter((option) => option.length > 0);
+                    formData.value[key] = legacyOptions;
+                    console.log("Parsed checkbox legacy string to array:", key, "string value:", value, "parsed array:", legacyOptions);
+                  }
+                } catch (e) {
+                  // If JSON parsing fails, fall back to comma-separated parsing
+                  const fallbackOptions = value
+                    .split(",")
+                    .map((option) => option.trim())
+                    .filter((option) => option.length > 0);
+                  formData.value[key] = fallbackOptions;
+                  console.log("Parsed checkbox fallback string to array:", key, "string value:", value, "parsed array:", fallbackOptions);
+                }
+              } else {
+                formData.value[key] = [];
+              }
+            } else {
+              formData.value[key] = value;
+            }
+          } else {
+            formData.value[key] = value;
+          }
+        });
+      }
+    };
+
+    // Reset form to empty state
+    const resetFormToEmpty = () => {
+      formData.value = {};
+      if (currentSchema.value && currentSchema.value.fields) {
+        currentSchema.value.fields.forEach((field) => {
+          formData.value[field.name] = getDefaultValue(field);
+        });
+      }
+    };
+
+    // Form reset
+    const resetForm = () => {
+      formData.value = {};
+      showSuccessModal.value = false;
+    };
+
+    // Close modal
+    const closeModal = () => {
+      showEditModal.value = false;
+    };
+
+    // Close success modal
+    const closeSuccessModal = () => {
+      showSuccessModal.value = false;
+      showDynamicFormDialog.value = false;
+    };
+
+    // Schema selection
+    const selectSchema = (schema) => {
+      currentSchema.value = schema;
+      showFormSelector.value = false;
+      showDynamicForm.value = true;
+      // Initialize form data using getDefaultValue for proper field initialization
+      formData.value = {};
+      schema.fields.forEach((field) => {
+        formData.value[field.name] = getDefaultValue(field);
+      });
+    };
+
+    // File handling
+    const handleFileChange = (fieldName, file) => {
+      formData.value[fieldName] = file;
+    };
+
+    const handleFileRemove = (fieldName, file) => {
+      formData.value[fieldName] = null;
+    };
+
+    // Upload attachments handler
+    const uploadAttachments = (file, fieldKey) => {
+      // Initialize file list for this field if it doesn't exist
+      if (!formData.value[fieldKey]) {
+        formData.value[fieldKey] = [];
+      }
+      // Add the file to the list
+      formData.value[fieldKey].push(file);
+    };
+
+    // Helper functions
+    const getFieldType = (fieldName) => {
+      if (!currentSchema.value || !currentSchema.value.fields) return "text";
+      const field = currentSchema.value.fields.find((f) => f.name === fieldName);
+      return field ? field.type : "text";
+    };
+
+    const getFieldOptions = (fieldName) => {
+      if (!currentSchema.value || !currentSchema.value.fields) return [];
+      const field = currentSchema.value.fields.find((f) => f.name === fieldName);
+      return field ? field.options || [] : [];
+    };
+
+    // Load available schemas
+    const loadAvailableSchemas = async () => {
+      try {
+        // This would typically load from backend
+        availableSchemas.value = [];
+      } catch (error) {
+        console.error("Error loading schemas:", error);
+      }
+    };
+
+    // Initialize form data from schema
+    const initializeFormData = (schema) => {
+      formData.value = {};
+      if (schema && schema.fields) {
+        schema.fields.forEach((field) => {
+          const defaultValue = getDefaultValue(field);
+          formData.value[field.name] = defaultValue;
+          if (field.type === "checkbox") {
+            console.log("Initializing checkbox field:", field.name, "with value:", defaultValue, "options_string:", field.options_string);
+          }
+          if (field.type === "file" || field.type === "image") {
+            console.log("Initializing file/image field:", field.name, "with value:", defaultValue);
+          }
+        });
+      }
+    };
+
+    // Get default value for field type
+    const getDefaultValue = (field) => {
+      switch (field.type) {
+        case "number":
+        case "customPrice":
+          return 0;
+        case "checkbox":
+          // For checkbox fields with options, return empty array
+          // For single checkbox without options, return false
+          if (field.options_string) {
+            console.log("getDefaultValue: checkbox with options_string:", field.options_string, "returning []");
+            return [];
+          }
+          console.log("getDefaultValue: checkbox without options_string, returning false");
+          return false;
+        case "date":
+          return new Date().toISOString().split("T")[0];
+        case "select":
+        case "radio":
+          if (field.options_string) {
+            const options = field.options_string
+              .split(/[,\n]/)
+              .map((option) => option.trim())
+              .filter((option) => option.length > 0);
+            return options.length > 0 ? options[0] : "";
+          }
+          return field.options && field.options.length > 0 ? field.options[0].value : "";
+        case "textarea":
+          return "";
+        case "file":
+        case "image":
+          return [];
+        default:
+          return "";
+      }
+    };
+
+    return {
+      // State
+      showDynamicFormDialog,
+      showDynamicForm,
+      showEditModal,
+      currentSchema,
+      formData,
+      formRules,
+      showSuccessModal,
+      showFormSelector,
+      submissionId,
+      availableSchemas,
+      fileList,
+      uploadingFiles,
+      isAnyFileUploading,
+      setUploadState,
+
+      // Methods
+      generateDynamicForm,
+      generateFieldComponent,
+      submitDynamicForm,
+      resetForm,
+      closeModal,
+      closeSuccessModal,
+      selectSchema,
+      handleFileChange,
+      handleFileRemove,
+      uploadAttachments,
+      getFieldType,
+      getFieldOptions,
+      loadAvailableSchemas,
+      initializeFormData,
+      getDefaultValue,
+      initializeFormWithData,
+      resetFormToEmpty,
+    };
+  };
+</script>
