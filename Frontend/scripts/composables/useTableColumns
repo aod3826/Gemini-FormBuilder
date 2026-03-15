@@ -1,0 +1,63 @@
+<script>
+    const useTableColumns = (schema, editHandler, deleteHandler) => {
+
+        const { getColumnWidth, getCellRenderer } = useFormatters(schema);
+
+        const tblColumns = computed(() => {
+            if (!schema.value || !schema.value.fields) return [];
+
+            const dataColumns = schema.value.fields.map(field => ({
+                key: field.name,
+                dataKey: field.name,
+                title: field.label || field.name,
+                width: field.width || getColumnWidth(field.type),
+                cellRenderer: getCellRenderer(field),
+                // minWidth: field.minWidth || undefined,
+                // maxWidth: field.maxWidth || undefined,
+                // sortable: field.sortable !== false,
+                // fixed: field.fixed || false,
+                // align: field.align || 'left',
+                // class: field.class || undefined,
+                // headerClass: field.headerClass || undefined,
+                // hidden: field.hidden || false,
+                // style: field.style || undefined,
+                // flexGrow: field.flexGrow || 0,
+                // flexShrink: field.flexShrink || 1,
+                // headerCellRenderer: field.headerCellRenderer || undefined
+            }));
+
+            // Add operations column
+            const operationsColumn = {
+                key: 'operations',
+                title: 'Operations',
+                cellRenderer: ({ rowData }) => {
+                    return h('div', { class: 'flex gap-2 justify-center' }, [
+                        h(ElementPlus.ElButton, {
+                            size: 'small',
+                            type: 'primary',
+                            onClick: () => {
+                                editHandler(rowData);
+                            }
+                        }, () => 'Edit'),
+                        h(ElementPlus.ElButton, {
+                            size: 'small',
+                            type: 'danger',
+                            onClick: () => {
+                                deleteHandler(rowData);
+                            }
+                        }, () => 'Delete')
+                    ]);
+                },
+                width: 150,
+                align: 'center',
+                fixed: 'right'
+            };
+
+            return [...dataColumns, operationsColumn];
+        });
+
+        return {
+            tblColumns
+        };
+    };
+</script>
