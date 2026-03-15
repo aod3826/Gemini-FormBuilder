@@ -1,0 +1,238 @@
+<script>
+  const useGeminiChat = (loadSchemaData, setSelectedSchema, schema) => {
+    // Reactive state
+    const messages = ref([]);
+    const userInput = ref("");
+    const isGenerating = ref(false);
+    const chatMessages = ref(null);
+    const generatedSchema = ref(null);
+    const schemaAccepted = ref(false);
+    const geminiCallType = ref(null);
+
+    const examplePrompts = ref([
+      "Create a contact form with name, email, phone, and message fields",
+      "Build a registration form for a conference with multiple ticket types",
+      "Design a survey form for customer feedback with rating scales",
+      "Create an order form for an e-commerce store",
+      "Build a job application form with file upload capabilities",
+    ]);
+
+    const dynamicPromptInputPlaceholder = computed(() => {
+      const currentSchema = schema.value;
+      console.log("🚀 Current schema in useGeminiChat:", currentSchema);
+      if (currentSchema) {
+        const appName = currentSchema.applicationName;
+        return `Describe the modifications you want to make to the form for ${appName}...`;
+      } else {
+        return "Describe the form you want to create... (e.g., 'Create a contact form with name, email, phone, and message fields')";
+      }
+    });
+
+    const getGeminiCallType = (schema, generatedSchema) => {
+      if (schema) {
+        return "modifySelectedSchema";
+      } else if (generatedSchema) {
+        return "modifyGeneratedSchema";
+      } else {
+        return "create";
+      }
+    };
+
+    const quickActions = ref([]);
+
+    const sendMessage = async () => {
+      if (!userInput.value.trim() || isGenerating.value) return;
+
+      const userMessage = {
+        role: "user",
+        content: userInput.value,
+        timestamp: new Date(),
+      };
+
+      messages.value.push(userMessage);
+
+      const currentInput = userInput.value;
+
+      isGenerating.value = true;
+
+      try {
+        console.log("🚀 Calling Gemini backend...", "🚀 User input:", currentInput, "🚀 Current schema:", JSON.stringify(schema.value));
+
+        // Call the real backend
+        const result = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).sendMessageToGemini(currentInput, JSON.stringify(schema.value));
+        });
+
+        console.log("🚀 Gemini backend response:", result);
+        if (result.success) {
+          geminiCallType.value = getGeminiCallType(schema.value, generatedSchema.value);
+          generatedSchema.value = result.schema;
+          console.log("🎉 Gemini response successful!");
+          acceptSchema();
+        } else {
+          // Add error response
+          messages.value.push({
+            role: "assistant",
+            content: `❌ Failed to generate form schema: ${result.error || "Unknown error"}`,
+            timestamp: new Date(),
+          });
+        }
+      } catch (error) {
+        console.error("Error calling Gemini service:", error);
+        messages.value.push({
+          role: "assistant",
+          content: `❌ Error: ${error.message || "Failed to communicate with Gemini service"}`,
+          timestamp: new Date(),
+        });
+      } finally {
+        isGenerating.value = false;
+        scrollToBottom();
+      }
+    };
+
+    // Schema action methods
+    const acceptSchema = () => {
+      if (!generatedSchema.value) {
+        ElMessage.warning("No schema to accept");
+        return;
+      }
+      schemaAccepted.value = true;
+      try {
+        const schema = generatedSchema.value;
+        const formattedSchema = {
+          ...schema,
+          id: schema.id || Date.now().toString(),
+          createdAt: schema.createdAt || new Date().toISOString(),
+          fields: schema.fields.map((field, index) => ({
+            ...field,
+            id: index + 1, // Ensure proper field IDs
+            required: field.required !== undefined ? field.required : false,
+          })),
+        };
+        loadSchemaData(formattedSchema);
+        // ElMessage.success("Schema accepted, saved, and loaded into Form Builder!");
+      } catch (error) {
+        console.error("Error accepting schema:", error);
+        ElMessage.error("Failed to accept schema: " + error.message);
+      }
+    };
+
+    const clearGeneratedSchema = () => {
+      generatedSchema.value = null;
+    };
+
+    const startNewChat = () => {
+      messages.value = [];
+      userInput.value = "";
+      setSelectedSchema(null);
+      generatedSchema.value = null;
+      schemaAccepted.value = false;
+      geminiCallType.value = null;
+    };
+
+    const clearChat = () => {
+      ElMessageBox.confirm("Are you sure you want to clear all chat messages?", "Clear Chat", {
+        confirmButtonText: "Clear",
+        cancelButtonText: "Cancel",
+        type: "warning",
+      })
+        .then(() => {
+          messages.value = [];
+          ElMessage.success("Chat cleared successfully");
+        })
+        .catch(() => {
+          // User cancelled
+        });
+    };
+
+    const exportChat = () => {
+      if (messages.value.length === 0) {
+        ElMessage.warning("No messages to export");
+        return;
+      }
+
+      const chatData = {
+        exportDate: new Date().toISOString(),
+        totalMessages: messages.value.length,
+        messages: messages.value,
+      };
+
+      const dataStr = JSON.stringify(chatData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: "application/json" });
+
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(dataBlob);
+      link.download = `gemini-chat-${new Date().toISOString().split("T")[0]}.json`;
+      link.click();
+
+      ElMessage.success("Chat exported successfully");
+    };
+    const afterSchemaSave = () => {
+      messages.value = [];
+      generatedSchema.value = null;
+      schemaAccepted.value = false;
+    };
+
+    const useExamplePrompt = (prompt) => {
+      userInput.value = prompt;
+      // sendMessage();
+    };
+
+    const executeQuickAction = () => {};
+
+    const formatMessage = (content) => {
+      // Basic formatting for messages (can be enhanced later)
+      return content
+        .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*(.*?)\*/g, "<em>$1</em>")
+        .replace(/\n/g, "<br>");
+    };
+
+    const formatTimestamp = (timestamp) => {
+      return new Date(timestamp).toLocaleTimeString();
+    };
+
+    const scrollToBottom = () => {
+      nextTick(() => {
+        if (chatMessages.value) {
+          chatMessages.value.scrollTop = chatMessages.value.scrollHeight;
+        }
+      });
+    };
+
+    // Watch for new messages to auto-scroll
+    watch(
+      messages,
+      () => {
+        scrollToBottom();
+      },
+      { deep: true }
+    );
+
+    return {
+      // State
+      messages,
+      userInput,
+      isGenerating,
+      chatMessages,
+      examplePrompts,
+      quickActions,
+      generatedSchema,
+      schemaAccepted,
+      geminiCallType,
+      dynamicPromptInputPlaceholder,
+      // Methods
+      sendMessage,
+      startNewChat,
+      clearChat,
+      exportChat,
+      useExamplePrompt,
+      executeQuickAction,
+      formatMessage,
+      formatTimestamp,
+      acceptSchema,
+      clearGeneratedSchema,
+      afterSchemaSave,
+    };
+  };
+</script>
