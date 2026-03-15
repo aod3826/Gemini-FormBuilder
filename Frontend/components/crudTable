@@ -1,0 +1,33 @@
+<el-card shadow="hover" style="margin-bottom: 20px;">
+    <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 18px; font-weight: 600;">{{schema?.name}}</span>
+            <el-button type="primary" @click="handleAddNewRecord">
+                <el-icon>
+                    <i class="el-icon-plus"></i>
+                </el-icon>
+                Add Record
+            </el-button>
+        </div>
+    </template>
+
+    <!-- Search Bar -->
+    <div style="margin-bottom: 16px;">
+        <el-input v-model="searchQuery" placeholder="Search records..." clearable style="max-width: 400px;"
+            @clear="clearSearch">
+            <template #prefix>
+                <el-icon>
+                    <i class="el-icon-search"></i>
+                </el-icon>
+            </template>
+        </el-input>
+        <div v-if="searchQuery" style="margin-top: 8px; font-size: 14px; color: #909399;">
+            Showing {{ filteredData.length }} of {{ data.length }} records
+        </div>
+    </div>
+
+    <div v-if="activeNav === 'allItems'">
+        <el-table-v2 v-loading="isLoading" :key="filteredData.length" :columns="tblColumns" :data="filteredData"
+            :width="1200" :height="500" style="width: 100%;" fixed />
+    </div>
+</el-card>
