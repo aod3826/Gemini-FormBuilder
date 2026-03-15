@@ -1,0 +1,389 @@
+<script>
+  const useSchemaStore = () => {
+    // Schema state
+    const schema = ref(null);
+    const hasSavedSchema = ref(false);
+    const allSchemas = ref([]);
+    const selectedSchemaName = ref("");
+
+    const isSaving = ref(false);
+    const isLoading = ref(false);
+    const isDeleting = ref(false);
+    const isError = ref(false);
+    const isSuccess = ref(false);
+    const errorMessage = ref("");
+    const toJsonArray = (data) => {
+      if (data.length == 0) return [];
+      const dataCopy = [...data];
+      const heads = dataCopy.shift();
+      const obj = dataCopy.map((r) => heads.reduce((o, k, i) => ((o[k] = r[i] || ""), o), {}));
+      return obj;
+    };
+
+    // Reset operation states
+    const resetOperationStates = () => {
+      isError.value = false;
+      isSuccess.value = false;
+      errorMessage.value = "";
+    };
+
+    // Save schema
+    const saveSchema = async (formSchema) => {
+      if (!formSchema || formSchema.fields.length === 0) {
+        isError.value = true;
+        errorMessage.value = "Please add some fields before saving";
+        return { success: false, error: errorMessage.value };
+      }
+
+      // Sanitize the schema before saving
+      const sanitizedSchema = sanitizeSchema(formSchema);
+
+      // Check if all fields have names
+      const fieldsWithoutNames = sanitizedSchema.fields.filter((field) => !field.name || !field.name.trim());
+      if (fieldsWithoutNames.length > 0) {
+        isError.value = true;
+        errorMessage.value = `Please ensure all fields have names. ${fieldsWithoutNames.length} field(s) missing names.`;
+        return { success: false, error: errorMessage.value };
+      }
+
+      if (!sanitizedSchema.targetSheetName?.trim()) {
+        isError.value = true;
+        errorMessage.value = "Please enter a target sheet name in the settings";
+        return { success: false, error: errorMessage.value };
+      }
+
+      resetOperationStates();
+      isSaving.value = true;
+
+      try {
+        // Save the sanitized schema
+        const result = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).saveFormSchema(sanitizedSchema);
+        });
+
+        if (result.success) {
+          isSuccess.value = true;
+          hasSavedSchema.value = true;
+          allSchemas.value = toJsonArray(JSON.parse(result.data));
+          return { success: true, message: result.message, data: result.data };
+        } else {
+          isError.value = true;
+          errorMessage.value = result.error;
+          return { success: false, error: errorMessage.value };
+        }
+      } catch (error) {
+        console.error("Error saving schema:", error);
+        isError.value = true;
+        errorMessage.value = "Error saving form schema";
+        return { success: false, error: errorMessage.value };
+      } finally {
+        isSaving.value = false;
+        isError.value = false;
+      }
+    };
+
+    // Sanitize schema data to remove unwanted characters and normalize whitespace
+    const sanitizeSchema = (schema) => {
+      if (!schema || !schema.fields) return schema;
+
+      // Sanitize fields in place
+      schema.fields.forEach((field) => {
+        // Remove tab characters and normalize whitespace for text fields
+        if (field.name) {
+          field.name = field.name.replace(/\t/g, "").trim();
+        }
+        if (field.label) {
+          field.label = field.label.replace(/\t/g, "").trim();
+        }
+        if (field.placeholder) {
+          field.placeholder = field.placeholder.replace(/\t/g, "").trim();
+        }
+        if (field.helperText) {
+          field.helperText = field.helperText.replace(/\t/g, "").trim();
+        }
+        if (field.defaultValue) {
+          field.defaultValue = field.defaultValue.replace(/\t/g, "").trim();
+        }
+        if (field.options_string) {
+          field.options_string = field.options_string
+            .replace(/\t/g, "")
+            .replace(/\n/g, ",")
+            .split(",")
+            .map((option) => option.trim())
+            .filter((option) => option.length > 0)
+            .join(", ");
+        }
+      });
+
+      // Sanitize other schema properties
+      if (schema.name) {
+        schema.name = schema.name.replace(/\t/g, "").trim();
+      }
+      if (schema.applicationName) {
+        schema.applicationName = schema.applicationName.replace(/\t/g, "").trim();
+      }
+      if (schema.targetSheetName) {
+        schema.targetSheetName = schema.targetSheetName.replace(/\t/g, "").trim();
+      }
+
+      return schema;
+    };
+
+    // Load schema
+    const loadSchema = async () => {
+      resetOperationStates();
+      isLoading.value = true;
+
+      try {
+        const loadedSchema = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getApplicationSchema();
+        });
+
+        if (loadedSchema) {
+          schema.value = loadedSchema;
+          hasSavedSchema.value = true;
+          isSuccess.value = true;
+          return { success: true, data: loadedSchema, message: "Form schema loaded successfully!" };
+        } else {
+          hasSavedSchema.value = false;
+          return { success: false, message: "No saved schema found" };
+        }
+      } catch (error) {
+        console.error("Error loading schema:", error);
+        isError.value = true;
+        errorMessage.value = "Error loading form schema";
+        hasSavedSchema.value = false;
+        return { success: false, error: errorMessage.value };
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    // Delete schema
+    const deleteSchema = async () => {
+      resetOperationStates();
+      isDeleting.value = true;
+
+      try {
+        await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).deleteLatestFormSchema();
+        });
+
+        schema.value = null;
+        hasSavedSchema.value = false;
+        isSuccess.value = true;
+        return { success: true, message: "Form schema deleted successfully!" };
+      } catch (error) {
+        console.error("Error deleting schema:", error);
+        isError.value = true;
+        errorMessage.value = "Error deleting form schema";
+        return { success: false, error: errorMessage.value };
+      } finally {
+        isDeleting.value = false;
+      }
+    };
+
+    // Check for saved schema (for initial load)
+    const checkForSavedSchema = async () => {
+      try {
+        const existingSchema = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getApplicationSchema();
+        });
+
+        hasSavedSchema.value = !!existingSchema;
+        return { success: true, hasSchema: !!existingSchema };
+      } catch (error) {
+        console.error("Error checking for saved schema:", error);
+        hasSavedSchema.value = false;
+        return { success: false, hasSchema: false };
+      }
+    };
+
+    const updateLocalSchema = (newSchema) => {
+      schema.value = newSchema;
+    };
+
+    // Get all application schemas
+    const getAllSchemas = async () => {
+      resetOperationStates();
+      isLoading.value = true;
+
+      try {
+        const schemas = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getAllApplicationSchemas();
+        });
+
+        // Ensure schemas is an array
+        const schemasArray = toJsonArray(JSON.parse(schemas));
+        console.log("Schemas Array: ", schemasArray);
+        isSuccess.value = true;
+        return { success: true, data: schemasArray, message: `Retrieved ${schemasArray.length} schemas` };
+      } catch (error) {
+        console.error("Error fetching all schemas:", error);
+        isError.value = true;
+        errorMessage.value = "Error fetching application schemas";
+        return { success: false, error: errorMessage.value, data: [] };
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    // Load all schemas and update state
+    const loadAllSchemas = async () => {
+      const result = await getAllSchemas();
+      if (result.success) {
+        allSchemas.value = result.data;
+      } else {
+        // Set empty array if there's an error
+        allSchemas.value = [];
+      }
+      return result;
+    };
+
+    // Set selected schema and load it
+    const setSelectedSchema = async (applicationName) => {
+      if (!applicationName) {
+        selectedSchemaName.value = "";
+        schema.value = null;
+        hasSavedSchema.value = false;
+        return { success: true, message: "Schema selection cleared" };
+      }
+
+      try {
+        // Load the schema directly from the backend
+        isLoading.value = true;
+        const loadedSchema = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getApplicationSchemaByName(applicationName);
+        });
+
+        if (loadedSchema) {
+          schema.value = loadedSchema;
+          selectedSchemaName.value = applicationName;
+          hasSavedSchema.value = true;
+          isSuccess.value = true;
+
+          return { success: true, data: loadedSchema, message: `Schema "${applicationName}" loaded successfully!` };
+        } else {
+          isError.value = true;
+          errorMessage.value = `Schema "${applicationName}" not found`;
+          return { success: false, error: errorMessage.value };
+        }
+      } catch (error) {
+        console.error("Error loading schema:", error);
+        isError.value = true;
+        errorMessage.value = "Error loading application schema";
+        return { success: false, error: errorMessage.value };
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    // Delete application schema by name
+    const deleteSchemaByName = async (applicationName) => {
+      if (!applicationName || !applicationName.trim()) {
+        isError.value = true;
+        errorMessage.value = "Application name is required";
+        return { success: false, error: errorMessage.value };
+      }
+
+      resetOperationStates();
+      isDeleting.value = true;
+
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).deleteApplicationSchemaByName(applicationName);
+        });
+
+        if (result) {
+          isSuccess.value = true;
+          // Refresh allSchemas after successful deletion
+          await loadAllSchemas();
+          return { success: true, message: `Schema "${applicationName}" deleted successfully!` };
+        } else {
+          isError.value = true;
+          errorMessage.value = `Schema "${applicationName}" not found`;
+          return { success: false, error: errorMessage.value };
+        }
+      } catch (error) {
+        console.error("Error deleting schema by name:", error);
+        isError.value = true;
+        errorMessage.value = "Error deleting application schema";
+        return { success: false, error: errorMessage.value };
+      } finally {
+        isDeleting.value = false;
+      }
+    };
+
+    // Load schema by name (parse the schema string from allSchemas)
+    const loadSchemaByName = async (applicationName) => {
+      if (!applicationName || !applicationName.trim()) {
+        isError.value = true;
+        errorMessage.value = "Application name is required";
+        return { success: false, error: errorMessage.value };
+      }
+
+      resetOperationStates();
+      isLoading.value = true;
+
+      try {
+        // Find the schema in allSchemas
+        const targetSchema = allSchemas.value.find((schemaObj) => schemaObj["Application Name"] === applicationName);
+
+        if (!targetSchema) {
+          isError.value = true;
+          errorMessage.value = `Schema "${applicationName}" not found`;
+          return { success: false, error: errorMessage.value };
+        }
+
+        // Parse the schema string
+        const parsedSchema = JSON.parse(targetSchema.Schema);
+        schema.value = parsedSchema;
+        hasSavedSchema.value = true;
+        isSuccess.value = true;
+
+        return { success: true, data: parsedSchema, message: `Schema "${applicationName}" loaded successfully!` };
+      } catch (error) {
+        console.error("Error loading schema by name:", error);
+        isError.value = true;
+        errorMessage.value = "Error loading application schema";
+        return { success: false, error: errorMessage.value };
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    onMounted(async () => {
+      //  await loadSchema();
+      await loadAllSchemas();
+    });
+
+    return {
+      // State
+      schema,
+      hasSavedSchema,
+      allSchemas,
+      selectedSchemaName,
+
+      // Operation states
+      isSaving,
+      isLoading,
+      isDeleting,
+      isError,
+      isSuccess,
+      errorMessage,
+
+      // Methods
+      saveSchema,
+      loadSchema,
+      deleteSchema,
+      checkForSavedSchema,
+      updateLocalSchema,
+      resetOperationStates,
+      getAllSchemas,
+      deleteSchemaByName,
+      loadSchemaByName,
+      loadAllSchemas,
+      setSelectedSchema,
+    };
+  };
+</script>
