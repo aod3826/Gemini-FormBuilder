@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <link rel="stylesheet" href="https://unpkg.com/purecss@3.0.0/build/pure-min.css" />
+  </head>
+  <body>
+    <form class="pure-form pure-form-stacked">
+      <label for="apiKey">Gemini API Key</label>
+      <input type="password" id="apiKey" placeholder="Enter API key" />
+      <div class="actions">
+        <button onclick="save()" class="pure-button pure-button-primary">Save</button>
+        <button onclick="google.script.host.close()" class="pure-button pure-button-secondary">Cancel</button>
+      </div>
+    </form>
+
+    <div id="msg" class="msg"></div>
+    <script>
+      function save() {
+        const key = document.getElementById("apiKey").value.trim();
+        document.getElementById("msg").textContent = "Saving...";
+        google.script.run
+          .withSuccessHandler(function () {
+            document.getElementById("msg").textContent = "Saved API key.";
+            setTimeout(function () {
+              google.script.host.close();
+            }, 500);
+          })
+          .withFailureHandler(function (err) {
+            document.getElementById("msg").textContent = "Error: " + (err && err.message ? err.message : err);
+          })
+          .saveApiKey(key);
+      }
+    </script>
+  </body>
+</html>
