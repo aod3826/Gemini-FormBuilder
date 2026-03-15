@@ -1,0 +1,41 @@
+<el-card class="settings-card">
+    <template #header>
+        <div class="card-header">
+            <span>Application Preferences</span>
+            <el-tag v-if="isSaving" type="info" size="small">
+                <el-icon class="is-loading">
+                    <Loading />
+                </el-icon>
+                Saving...
+            </el-tag>
+        </div>
+    </template>
+
+    <el-form label-width="140px" class="settings-form">
+        <el-form-item label="Application Name">
+            <el-input v-model="applicationName" placeholder="e.g., Customer Registration, Order Form, Contact Form"
+                clearable />
+            <div class="form-help">This name will appear in the header of your application</div>
+        </el-form-item>
+
+        <el-form-item label="Target Sheet Name">
+            <el-input v-model="targetSheetName" placeholder="e.g., Customer_Data, Order_Submissions, Contact_Responses"
+                clearable />
+            <div class="form-help">This sheet will store form submissions. Use underscores instead of spaces for better
+                compatibility.</div>
+        </el-form-item>
+
+        <el-form-item label="Currency">
+            <el-input v-model="currency" placeholder="e.g., USD, EUR, GBP, INR, JPY, CAD" clearable />
+            <div class="form-help">Enter the 3-letter currency code (ISO 4217). Common codes: USD, EUR, GBP, INR, JPY,
+                CAD, AUD</div>
+        </el-form-item>
+
+        <el-form-item label="Locale">
+            <el-input v-model="locale" placeholder="e.g., en-US, es-ES, fr-FR, de-DE, ja-JP, zh-CN" clearable />
+            <div class="form-help">Enter the locale code (language-COUNTRY). Common codes: en-US, en-GB, es-ES, fr-FR,
+                de-DE, ja-JP, zh-CN</div>
+        </el-form-item>
+    </el-form>
+
+</el-card>
