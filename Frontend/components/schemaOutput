@@ -1,0 +1,30 @@
+<el-card>
+    <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h3 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 600;">Application Schema</h3>
+                <p style="margin: 0; font-size: 14px; color: #909399;">Complete schema including form fields and
+                    application settings</p>
+            </div>
+            <el-button type="primary" :loading="isSaving" @click="handleSaveSchema" :disabled="formFields.length === 0">
+                <el-icon>
+                    <Document />
+                </el-icon>
+                Save Schema
+            </el-button>
+        </div>
+    </template>
+
+    <el-alert v-if="formFields.length === 0" title="No fields added" type="warning" :closable="false" show-icon>
+        Please add some fields in the Form Builder tab before saving the schema.
+    </el-alert>
+
+    <el-alert v-if="isError" :title="errorMessage" type="error" :closable="false" show-icon>
+        There was an error processing your request. Please try again.
+    </el-alert>
+
+    <el-card shadow="never">
+        <pre
+            style="margin: 0; padding: 16px; background-color: #f5f7fa; border-radius: 4px; font-family: monospace; font-size: 13px; line-height: 1.5; color: #303133; white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto;">{{ JSON.stringify(formSchema, null, 2) }}</pre>
+    </el-card>
+</el-card>
