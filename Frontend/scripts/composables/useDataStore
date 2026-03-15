@@ -1,0 +1,164 @@
+<script>
+  const useDataStore = () => {
+    const data = ref([]);
+    const allSheetsData = ref({});
+    const isLoading = ref(false);
+    const isError = ref(false);
+    const isSuccess = ref(false);
+    const errorMsg = ref(null);
+    const successMsg = ref("");
+
+    const resetState = () => {
+      isError.value = false;
+      isSuccess.value = false;
+      errorMsg.value = null;
+      successMsg.value = "";
+    };
+    const toJsonArray = (data) => {
+      if (data.length == 0) return [];
+      const dataCopy = [...data];
+      const heads = dataCopy.shift();
+      const obj = dataCopy.map((r) => heads.reduce((o, k, i) => ((o[k] = r[i] || ""), o), {}));
+      return obj;
+    };
+
+    const executeAction = async (action, id = null, sheetName = null, recordData = null, headers = null) => {
+      isLoading.value = true;
+      resetState();
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            .executeAction({
+              action,
+              sheetName,
+              id,
+              data: JSON.parse(JSON.stringify(recordData)),
+              headers,
+            });
+        });
+        const parsedResult = typeof result === "string" ? JSON.parse(result) : result;
+        isSuccess.value = true;
+        switch (action) {
+          case "add":
+            successMsg.value = "Record added successfully";
+            break;
+          case "update":
+            successMsg.value = "Record updated successfully";
+            break;
+          case "delete":
+            successMsg.value = "Record deleted successfully";
+            break;
+          case "getAll":
+            successMsg.value = "Data loaded successfully";
+            break;
+          default:
+            successMsg.value = "Operation completed successfully";
+        }
+        ElMessage.success(successMsg.value);
+        return parsedResult;
+      } catch (err) {
+        isError.value = true;
+        errorMsg.value = err.message || "An error occurred during the operation";
+        console.error("CRUD operation failed:", err);
+        throw err;
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    // CRUD methods
+    const fetchAllSheetData = async () => {
+      isLoading.value = true;
+      try {
+        const result = await new Promise((resolve, reject) => {
+          google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getAllSheetData();
+        });
+        const parsedResult = JSON.parse(result);
+        allSheetsData.value = Object.fromEntries(Object.entries(parsedResult).map(([key, value]) => [key, toJsonArray(value).reverse()]));
+        console.log("All Sheets Data: ", allSheetsData.value);
+      } catch (err) {
+        console.error("Auto-fetch failed:", err);
+      } finally {
+        isLoading.value = false;
+      }
+    };
+
+    const fetchAll = async (sheetName) => {
+      const result = await executeAction("getAll", null, sheetName);
+      data.value = toJsonArray(result).reverse();
+      return result;
+    };
+
+    const addNewRecord = async (recordData, sheetName) => {
+      const result = await executeAction("add", null, sheetName, recordData);
+      data.value = toJsonArray(result).reverse();
+      allSheetsData.value[sheetName] = toJsonArray(result).reverse();
+      return result;
+    };
+
+    const updateRecord = async (id, recordData, sheetName) => {
+      const result = await executeAction("update", id, sheetName, recordData);
+      data.value = toJsonArray(result).reverse();
+      allSheetsData.value[sheetName] = toJsonArray(result).reverse();
+      return result;
+    };
+
+    const deleteRecord = async (id, sheetName) => {
+      ElMessageBox.confirm(`Are you sure you want to delete this record? This action cannot be undone.`, "Confirm Delete", {
+        confirmButtonText: "Delete",
+        cancelButtonText: "Cancel",
+        type: "warning",
+        confirmButtonClass: "el-button--danger",
+      })
+        .then(async () => {
+          const result = await executeAction("delete", id, sheetName);
+          data.value = toJsonArray(result).reverse();
+          allSheetsData.value[sheetName] = toJsonArray(result).reverse();
+          return result;
+        })
+        .catch(() => {
+          ElMessage.info("Deletion cancelled");
+        });
+    };
+
+    const uploadFile = async (file) => {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler((res) => {
+            console.log("File Upload success", res);
+            resolve(res); // Resolve the promise with the response from the server
+          })
+          .withFailureHandler((error) => {
+            console.log("failure", error);
+            reject(error); // Reject the promise with the error from the server
+          })
+          .uploadFile(file);
+      });
+    };
+
+    onMounted(async () => {
+      try {
+        await fetchAllSheetData();
+      } catch (error) {
+        console.error("Auto-fetch failed:", error);
+      }
+    });
+
+    return {
+      data,
+      isLoading: readonly(isLoading),
+      isError: readonly(isError),
+      isSuccess: readonly(isSuccess),
+      errorMsg: readonly(errorMsg),
+      successMsg: readonly(successMsg),
+      fetchAll,
+      addNewRecord,
+      updateRecord,
+      deleteRecord,
+      allSheetsData,
+      uploadFile,
+    };
+  };
+</script>
