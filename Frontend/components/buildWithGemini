@@ -1,0 +1,89 @@
+<div class="gemini-builder-container">
+  <div class="block-header">
+    <!-- <pre>{{ JSON.stringify(generatedSchema) }}</pre>
+    <pre>{{ JSON.stringify(schema) }}</pre>
+    <pre>{{ JSON.stringify(geminiCallType, null, 2) }}</pre>
+    <pre>{{ JSON.stringify(dynamicPromptInputPlaceholder, null, 2) }}</pre> -->
+
+    <div><span class="main-heading"> Build with</span> <img src="https://drive.google.com/thumbnail?id=196gpTFUSyoeQQHwHpcV9k6AfF7tewQ5p&sz=w250" alt="Gemini" class="gemini-logo" /></div>
+    <el-tag type="info" size="small" class="ai-tag">
+      <el-icon>
+        <Star />
+      </el-icon>
+      AI-Powered Form Building
+    </el-tag>
+  </div>
+  <div class="gemini-chat-container">
+    <div class="chat-input-wrapper">
+      <el-input v-model="userInput" type="textarea" :rows="inputRows" ref="chatInputRef" :placeholder="dynamicPromptInputPlaceholder" @keydown.ctrl.enter="sendMessage" resize="none" class="chat-input"> </el-input>
+    </div>
+
+    <div class="chat-input-actions">
+      <el-button type="primary" @click="sendMessage" :loading="isGenerating" :disabled="!userInput.trim()" class="action-btn send-btn">
+        <el-icon v-if="!isGenerating">
+          <Promotion />
+        </el-icon>
+        <span v-if="!isGenerating">Send</span>
+        <span v-else>Generating...</span>
+      </el-button>
+    </div>
+  </div>
+  <div v-if="messages.length === 0 &&!schema" class="empty-chat">
+    <div>
+      <el-button v-for="prompt in examplePrompts" :key="prompt" type="info" size="small" plain @click="useExamplePrompt(prompt)" class="example-prompt-btn"> {{ prompt }} </el-button>
+    </div>
+  </div>
+
+  <div class="loading-container" v-if="isGenerating">
+    <div class="loading-circle">
+      <img src="https://drive.google.com/thumbnail?id=1-7_nv3uULzzKeBzM-184nPZClJQOkTEQ&sz=w48" alt="Gemini" class="gemini-logo-loading" />
+    </div>
+    <p class="loading-text">Generating your application...</p>
+  </div>
+  <div class="schema-actions" v-if="generatedSchema">
+    <div v-if="schemaAccepted">
+      <div v-if="geminiCallType === 'create'" style="flex-direction: column; align-items: center; justify-content: center">
+        <p>Your <span style="font-weight: bold; color: #920cd4">Form + CRUD application</span> for <span style="font-weight: bold; color: #410cd4">{{ generatedSchema.applicationName }}</span> is ready to use!</p>
+        <p style="font-size: 10px; color: #3c2972">You can now use the following actions to manage your application:</p>
+        <p style="font-size: 10px; color: #bb055d">(Don't forget to save the schema after you are done editing!)</p>
+        <el-divider />
+      </div>
+      <div v-if="geminiCallType === 'modifySelectedSchema'" class="horizontally-centered">
+        <p>Your application has been modified successfully!</p>
+        <el-divider />
+      </div>
+      <div v-if="geminiCallType === 'modifyGeneratedSchema'" class="horizontally-centered">
+        <p>Your application has been modified successfully!</p>
+        <el-divider />
+      </div>
+      <el-space class="horizontally-centered">
+        <el-button type="success" size="small" @click="activeTab = 'preview'" class="schema-action-btn">
+          <el-icon>
+            <View />
+          </el-icon>
+          View Form
+        </el-button>
+        <el-button type="success" size="small" @click="activeTab = 'builder'" class="schema-action-btn">
+          <el-icon>
+            <Edit />
+          </el-icon>
+          Edit in Form Builder
+        </el-button>
+        <el-button type="success" size="small" @click="handleSuggestModifications" class="schema-action-btn">
+          <el-icon>
+            <Edit />
+          </el-icon>
+          Suggest Modifications
+        </el-button>
+      </el-space>
+    </div>
+  </div>
+  <div v-if="(schema || generatedSchema) && !isGenerating" class="create-new-application-btn">
+    <el-button type="primary" size="small" @click="startNewChat" class="schema-action-btn">
+      <el-icon>
+        <Refresh />
+      </el-icon>
+      Create New Application
+    </el-button>
+  </div>
+</div>
