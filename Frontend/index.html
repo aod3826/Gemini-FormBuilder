@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://unpkg.com/vue@3"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@5.8.55/css/materialdesignicons.min.css" />
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.2.0/css/all.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <title>Drag & Drop Form Builder</title>
+    <?!= include('Frontend/styles/main'); ?>
+  </head>
+
+  <body>
+    <div id="app">
+      <div v-if="isSaving || isLoading || isDeleting" class="global-loading-overlay">
+        <div class="custom-spinner">
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+        </div>
+        <div class="loading-text">
+          <span v-if="isSaving">Saving Application ...</span>
+          <span v-else-if="isLoading">Loading ...</span>
+          <span v-else-if="isDeleting">Deleting Application ...</span>
+        </div>
+      </div>
+
+      <el-container>
+        <el-header>
+          <el-menu :default-active="activeNav" mode="horizontal" @select="handleNavSelect">
+            <el-menu-item index="builder">
+              <el-icon>
+                <Tools />
+              </el-icon>
+              <span style="font-size: 24px; font-weight: 800">Form Builder</span>
+              <el-tag v-if="isSaving || isLoading || isDeleting" type="info" size="small" style="margin-left: 8px">
+                <el-icon class="is-loading" v-if="isSaving || isLoading || isDeleting">
+                  <Loading />
+                </el-icon>
+                <span v-if="isSaving">Saving...</span>
+                <span v-else-if="isLoading">Loading...</span>
+                <span v-else-if="isDeleting">Deleting...</span>
+              </el-tag>
+            </el-menu-item>
+          </el-menu>
+        </el-header>
+        <el-main v-if="activeNav === 'settings'"> </el-main>
+        <el-container v-if="activeNav === 'builder'">
+          <?!= include('Frontend/components/sidebar'); ?>
+          <el-main>
+            <el-tabs v-model="activeTab" type="border-card" class="form-builder-tabs">
+              <el-tab-pane label="Build with Gemini" name="gemini">
+                <?!= include('Frontend/components/buildWithGemini'); ?>
+              </el-tab-pane>
+              <el-tab-pane label="Form Builder" name="builder">
+                <?!= include('Frontend/components/formBuilder'); ?>
+              </el-tab-pane>
+
+              <el-tab-pane label="Preview" name="preview">
+                <?!= include('Frontend/components/preview'); ?>
+              </el-tab-pane>
+              <el-tab-pane label="App Preferences" name="preferences">
+                <?!= include('Frontend/components/preferences'); ?>
+              </el-tab-pane>
+              <!-- <el-tab-pane label="Schema" name="schema">
+                <?!= include('Frontend/components/schemaOutput'); ?>
+              </el-tab-pane> -->
+            </el-tabs>
+          </el-main>
+          <?!= include('Frontend/components/fieldEditModal'); ?>
+        </el-container>
+      </el-container>
+    </div>
+
+    <!-- Include composables first (order matters!) -->
+    <?!= include('Frontend/scripts/composables/useTableColumns'); ?>
+    <?!= include('Frontend/scripts/composables/useSchemaStore'); ?>
+    <?!= include('Frontend/scripts/composables/useFormBuilder'); ?>
+    <?!= include('Frontend/scripts/composables/useGeminiChat'); ?>
+
+    <!-- Include the refactored main application script last -->
+    <?!= include('Frontend/scripts/jsVue'); ?>
+  </body>
+</html>
