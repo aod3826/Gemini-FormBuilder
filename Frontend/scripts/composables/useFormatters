@@ -1,0 +1,750 @@
+<script>
+
+
+    // useFormatters.js - Formatters and Field Rendering Composable
+    const useFormatters = (schema) => {
+        // Column width mapping for different field types
+        const getColumnWidth = (fieldType) => {
+            const widthMap = {
+                text: 150,
+                email: 200,
+                number: 120,
+                select: 150,
+                radio: 120,
+                checkbox: 100,
+                date: 120,
+                file: 200,
+                image: 150,
+                textarea: 300,
+                customPrice: 120
+            };
+            return widthMap[fieldType] || 150;
+        };
+
+        // Schema-based currency formatter using Intl API
+        const formatCurrency = (value, field, schema) => {
+            if (!value || value === null || value === undefined) return '-';
+
+            try {
+                const num = parseFloat(value);
+                if (isNaN(num)) return value;
+
+                // Get currency and locale from field first, then fall back to schema defaults
+                const currency = field.currency || schema?.currency || 'USD';
+                const locale = field.locale || schema?.locale || 'en-US';
+                const currencyPosition = field.currencyPosition || 'prefix';
+
+                // Use Intl API for proper currency formatting
+                const formatter = new Intl.NumberFormat(locale, {
+                    style: 'currency',
+                    currency: currency,
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+
+                let formattedValue = formatter.format(num);
+
+                // Handle custom currency position if needed
+                if (currencyPosition === 'suffix' && currency !== 'USD') {
+                    // For non-USD currencies, we might need to handle suffix positioning
+                    // This is a simplified approach - Intl API handles most cases automatically
+                    formattedValue = formatter.format(num);
+                }
+
+                return formattedValue;
+            } catch (error) {
+                console.warn('Currency formatting error:', error);
+                // Fallback to simple formatting
+                return `${field.currency || schema?.currency || 'USD'} ${parseFloat(value).toFixed(2)}`;
+            }
+        };
+
+        // Get currency symbol for a given currency code
+        const getCurrencySymbol = (currencyCode, locale = 'en-US') => {
+            try {
+                const formatter = new Intl.NumberFormat(locale, {
+                    style: 'currency',
+                    currency: currencyCode,
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 0
+                });
+
+                // Format 0 to get the currency symbol
+                const formatted = formatter.format(0);
+                // Extract the currency symbol (everything except the number)
+                return formatted.replace(/[\d.,\s]/g, '').trim();
+            } catch (error) {
+                console.warn('Error getting currency symbol:', error);
+                return currencyCode;
+            }
+        };
+
+        // Format currency with custom positioning
+        const formatCurrencyWithPosition = (value, field, schema) => {
+            if (!value || value === null || value === undefined) return '-';
+
+            try {
+                const num = parseFloat(value);
+                if (isNaN(num)) return value;
+
+                const currency = field.currency || schema?.currency || 'USD';
+                const locale = field.locale || schema?.locale || 'en-US';
+                const currencyPosition = field.currencyPosition || 'prefix';
+
+                // Use Intl API for the number formatting
+                const numberFormatter = new Intl.NumberFormat(locale, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+
+                const formattedNumber = numberFormatter.format(num);
+                const currencySymbol = getCurrencySymbol(currency, locale);
+
+                if (currencyPosition === 'suffix') {
+                    return `${formattedNumber} ${currencySymbol}`;
+                } else {
+                    return `${currencySymbol}${formattedNumber}`;
+                }
+            } catch (error) {
+                console.warn('Currency formatting error:', error);
+                // Fallback to simple formatting
+                const currency = field.currency || schema?.currency || 'USD';
+                return `${currency} ${parseFloat(value).toFixed(2)}`;
+            }
+        };
+
+        // Cell renderer function for different field types using Vue's h function
+        const getCellRenderer = (field) => {
+            return ({ cellData: value }) => {
+
+                if (value === null || value === undefined || value === '') {
+                    return h('span', { class: 'text-gray-400' }, '-');
+                }
+
+                switch (field.type) {
+                    case 'email':
+                        return h('a', {
+                            class: 'text-blue-600 hover:text-blue-800',
+                            href: `mailto:${value}`
+                        }, value);
+
+                    case 'number':
+                        return h('span', { class: 'font-mono' },
+                            formatNumberWithOptions(value, field, schema)
+                        );
+
+                    case 'date':
+                        try {
+                            const date = new Date(value);
+                            return h('span', { class: 'text-sm' }, formatDate(value, field, schema));
+                        } catch {
+                            return h('span', {}, value);
+                        }
+
+                    case 'checkbox':
+                        try {
+                            // Handle checkbox values - could be boolean, array, or JSON string
+                            if (field.options_string) {
+                                // This is a checkbox group with multiple options
+                                let checkboxValues = [];
+
+                                if (typeof value === 'string' && value) {
+                                    try {
+                                        // Try to parse as JSON string first
+                                        const parsed = JSON.parse(value);
+                                        if (Array.isArray(parsed)) {
+                                            checkboxValues = parsed;
+                                        } else {
+                                            // Fallback to comma-separated parsing
+                                            checkboxValues = value.split(',').map(v => v.trim()).filter(v => v);
+                                        }
+                                    } catch (e) {
+                                        // If JSON parsing fails, fall back to comma-separated parsing
+                                        checkboxValues = value.split(',').map(v => v.trim()).filter(v => v);
+                                    }
+                                } else if (Array.isArray(value)) {
+                                    checkboxValues = value;
+                                }
+
+                                if (checkboxValues.length > 0) {
+                                    return h('div', { class: 'flex flex-wrap gap-1' },
+                                        checkboxValues.map(option =>
+                                            h('span', {
+                                                class: 'inline-block px-2 py-1 text-xs bg-green-100 text-green-800 rounded mr-1 mb-1'
+                                            }, option)
+                                        )
+                                    );
+                                } else {
+                                    return h('span', { class: 'text-gray-400' }, 'None selected');
+                                }
+                            } else {
+                                // Single checkbox - show boolean value
+                                return value ?
+                                    h('span', { class: 'text-green-600 font-semibold' }, '✓ Yes') :
+                                    h('span', { class: 'text-red-600 font-semibold' }, '✗ No');
+                            }
+                        } catch (error) {
+                            console.error('Error rendering checkbox field:', field.name, 'value:', value, 'error:', error);
+                            return h('span', { class: 'text-red-400' }, 'Error');
+                        }
+
+                    case 'select':
+                    case 'radio':
+                        return h('span', { class: 'inline-block px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded' }, value);
+
+                    case 'textarea':
+                        return h('div', {
+                            class: 'max-w-xs truncate',
+                            title: value
+                        }, value);
+
+                    case 'file':
+                        return h('a', {
+                            class: 'text-blue-600 hover:text-blue-800',
+                            href: value,
+                            target: '_blank'
+                        }, 'Open');
+
+                    case 'image':
+                        return h('a', {
+                            href: value,
+                            target: '_blank'
+                        }, h('img', {
+                            src: value,
+                            style: 'width: 32px; height: 32px; border-radius: 4px;border: 2px solid #ccc; object-fit: cover;',
+                            alt: 'Image'
+                        }));
+
+                    case 'link':
+                        return h('a', {
+                            class: 'text-blue-600 hover:text-blue-800',
+                            href: value,
+                            target: '_blank'
+                        }, value);
+
+                    case 'customPrice':
+                        if (!value) return h('span', { class: 'text-gray-400' }, '-');
+                        const formattedCurrency = formatCurrencyWithPosition(value, field, schema);
+                        return h('span', { class: 'font-mono text-green-600' }, formattedCurrency);
+
+                    default:
+                        return h('span', {}, value);
+                }
+            };
+        };
+
+        // Field validation rules generator
+        const getFieldRules = (field) => {
+            const rules = [];
+
+            if (field.required) {
+                rules.push({
+                    required: true,
+                    message: `${field.label || field.name} is required`,
+                    trigger: 'blur'
+                });
+            }
+
+            if (field.minLength) {
+                rules.push({
+                    min: field.minLength,
+                    message: `${field.label || field.name} must be at least ${field.minLength} characters`,
+                    trigger: 'blur'
+                });
+            }
+
+            if (field.maxLength) {
+                rules.push({
+                    max: field.maxLength,
+                    message: `${field.label || field.name} must be no more than ${field.maxLength} characters`,
+                    trigger: 'blur'
+                });
+            }
+
+            // Email validation
+            if (field.type === 'email' && field.required) {
+                rules.push({
+                    type: 'email',
+                    message: `${field.label || field.name} must be a valid email address`,
+                    trigger: 'blur'
+                });
+            }
+
+            // Number validation
+            if (field.type === 'number') {
+                if (field.min !== undefined) {
+                    rules.push({
+                        min: field.min,
+                        message: `${field.label || field.name} must be at least ${field.min}`,
+                        trigger: 'blur'
+                    });
+                }
+                if (field.max !== undefined) {
+                    rules.push({
+                        max: field.max,
+                        message: `${field.label || field.name} must be no more than ${field.max}`,
+                        trigger: 'blur'
+                    });
+                }
+            }
+
+            return rules;
+        };
+
+        // Default value generator for different field types
+        const getDefaultValue = (field) => {
+            switch (field.type) {
+                case 'number':
+                case 'customPrice':
+                    return 0;
+                case 'checkbox':
+                    // For checkbox fields with options, return empty array
+                    // For single checkbox without options, return false
+                    if (field.options_string) {
+                        return [];
+                    }
+                    return false;
+                case 'date':
+                    return new Date().toISOString().split('T')[0];
+                case 'select':
+                case 'radio':
+                    if (field.options_string) {
+                        const options = field.options_string
+                            .split(/[,\n]/)
+                            .map(option => option.trim())
+                            .filter(option => option.length > 0);
+                        return options.length > 0 ? options[0] : '';
+                    }
+                    return field.options && field.options.length > 0 ? field.options[0].value : '';
+                case 'textarea':
+                    return '';
+                case 'file':
+                    return '';
+                default:
+                    return '';
+            }
+        };
+
+        // Form validation function
+        const validateForm = (formData, fields) => {
+            const errors = [];
+
+            fields.forEach(field => {
+                if (field.required) {
+                    const value = formData[field.name];
+                    // Handle different field types for required validation
+                    if (field.type === 'checkbox') {
+                        // For checkbox fields, check if array is empty or if single checkbox is false
+                        if (Array.isArray(value) && value.length === 0) {
+                            errors.push(`${field.label || field.name} is required`);
+                        } else if (!Array.isArray(value) && !value) {
+                            errors.push(`${field.label || field.name} is required`);
+                        }
+                    } else if (!value || (typeof value === 'string' && value.trim() === '')) {
+                        errors.push(`${field.label || field.name} is required`);
+                    }
+                }
+
+                // Email validation
+                if (field.type === 'email' && formData[field.name]) {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(formData[field.name])) {
+                        errors.push(`${field.label || field.name} must be a valid email address`);
+                    }
+                }
+
+                // Number validation
+                if (field.type === 'number' && formData[field.name]) {
+                    const num = Number(formData[field.name]);
+                    if (isNaN(num)) {
+                        errors.push(`${field.label || field.name} must be a valid number`);
+                    } else if (field.min !== undefined && num < field.min) {
+                        errors.push(`${field.label || field.name} must be at least ${field.min}`);
+                    } else if (field.max !== undefined && num > field.max) {
+                        errors.push(`${field.label || field.name} must be no more than ${field.max}`);
+                    }
+                }
+            });
+
+            return errors;
+        };
+
+        // Date formatting utilities
+        const formatDate = (date, field = null, schema = null) => {
+            if (!date) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+                return new Date(date).toLocaleDateString(locale);
+            } catch {
+                return date;
+            }
+        };
+
+        const formatTime = (timestamp, field = null, schema = null) => {
+            if (!timestamp) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+                return new Date(timestamp).toLocaleTimeString(locale);
+            } catch {
+                return timestamp;
+            }
+        };
+
+        const formatDateTime = (dateTime, field = null, schema = null) => {
+            if (!dateTime) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+                const date = new Date(dateTime);
+                return `${date.toLocaleDateString(locale)} ${date.toLocaleTimeString(locale)}`;
+            } catch {
+                return dateTime;
+            }
+        };
+
+        // Enhanced date formatting with field-specific options
+        const formatDateWithOptions = (date, field = null, schema = null) => {
+            if (!date) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+                const dateObj = new Date(date);
+
+                // Check if field has specific date format preferences
+                if (field?.dateFormat) {
+                    // Handle custom date format if specified
+                    switch (field.dateFormat) {
+                        case 'short':
+                            return dateObj.toLocaleDateString(locale, {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric'
+                            });
+                        case 'long':
+                            return dateObj.toLocaleDateString(locale, {
+                                weekday: 'long',
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                            });
+                        case 'numeric':
+                            return dateObj.toLocaleDateString(locale, {
+                                year: 'numeric',
+                                month: '2-digit',
+                                day: '2-digit'
+                            });
+                        default:
+                            return dateObj.toLocaleDateString(locale);
+                    }
+                }
+
+                // Default formatting
+                return dateObj.toLocaleDateString(locale);
+            } catch {
+                return date;
+            }
+        };
+
+        // Format relative time (e.g., "2 hours ago", "yesterday")
+        const formatRelativeTime = (date, field = null, schema = null) => {
+            if (!date) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+                const dateObj = new Date(date);
+                const now = new Date();
+                const diffInMs = now - dateObj;
+                const diffInHours = diffInMs / (1000 * 60 * 60);
+                const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+
+                if (diffInHours < 1) {
+                    return 'Just now';
+                } else if (diffInHours < 24) {
+                    const hours = Math.floor(diffInHours);
+                    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+                } else if (diffInDays < 7) {
+                    const days = Math.floor(diffInDays);
+                    if (days === 1) return 'Yesterday';
+                    if (days === 2) return '2 days ago';
+                    return `${days} days ago`;
+                } else {
+                    return formatDate(date, field, schema);
+                }
+            } catch {
+                return date;
+            }
+        };
+
+        // Enhanced number formatting with field-specific options
+        const formatNumberWithOptions = (value, field = null, schema = null) => {
+            if (!value || value === null || value === undefined) return '-';
+            try {
+                const num = parseFloat(value);
+                if (isNaN(num)) return value;
+
+                const locale = field?.locale || schema?.locale || 'en-US';
+
+                // Check if field has specific number format preferences
+                if (field?.numberFormat) {
+                    const options = {};
+
+                    // Handle minimum and maximum fraction digits
+                    if (field.minFractionDigits !== undefined) {
+                        options.minimumFractionDigits = field.minFractionDigits;
+                    }
+                    if (field.maxFractionDigits !== undefined) {
+                        options.maximumFractionDigits = field.maxFractionDigits;
+                    }
+
+                    // Handle specific number styles
+                    if (field.numberStyle) {
+                        switch (field.numberStyle) {
+                            case 'decimal':
+                                options.style = 'decimal';
+                                break;
+                            case 'percent':
+                                options.style = 'percent';
+                                break;
+                            case 'currency':
+                                options.style = 'currency';
+                                options.currency = field.currency || schema?.currency || 'USD';
+                                break;
+                            case 'unit':
+                                options.style = 'unit';
+                                options.unit = field.unit || 'meter';
+                                break;
+                        }
+                    }
+
+                    return new Intl.NumberFormat(locale, options).format(num);
+                }
+
+                // Default number formatting
+                return num.toLocaleString(locale);
+            } catch (error) {
+                console.warn('Number formatting error:', error);
+                return value;
+            }
+        };
+
+        // Format number as percentage
+        const formatPercent = (value, field = null, schema = null) => {
+            if (!value || value === null || value === undefined) return '-';
+            try {
+                const num = parseFloat(value);
+                if (isNaN(num)) return value;
+
+                const locale = field?.locale || schema?.locale || 'en-US';
+                const minDigits = field?.minFractionDigits !== undefined ? field.minFractionDigits : 0;
+                const maxDigits = field?.maxFractionDigits !== undefined ? field.maxFractionDigits : 2;
+
+                return new Intl.NumberFormat(locale, {
+                    style: 'percent',
+                    minimumFractionDigits: minDigits,
+                    maximumFractionDigits: maxDigits
+                }).format(num / 100);
+            } catch (error) {
+                console.warn('Percentage formatting error:', error);
+                return `${value}%`;
+            }
+        };
+
+        // Format phone number with locale support
+        const formatPhoneNumber = (phoneNumber, field = null, schema = null) => {
+            if (!phoneNumber) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+
+                // Basic phone number formatting - you can enhance this with libphonenumber-js for more sophisticated formatting
+                const cleaned = phoneNumber.replace(/\D/g, '');
+
+                if (cleaned.length === 10) {
+                    // US format: (123) 456-7890
+                    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+                } else if (cleaned.length === 11 && cleaned.startsWith('1')) {
+                    // US format with country code: +1 (123) 456-7890
+                    return `+1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
+                } else if (cleaned.length === 12 && cleaned.startsWith('91')) {
+                    // Indian format: +91 98765 43210
+                    return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
+                } else {
+                    // Generic formatting
+                    return phoneNumber;
+                }
+            } catch (error) {
+                console.warn('Phone number formatting error:', error);
+                return phoneNumber;
+            }
+        };
+
+        // Format address with locale support
+        const formatAddress = (address, field = null, schema = null) => {
+            if (!address) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+
+                // Basic address formatting - you can enhance this with address parsing libraries
+                if (typeof address === 'string') {
+                    return address;
+                } else if (typeof address === 'object') {
+                    const parts = [];
+
+                    // Handle different address formats based on locale
+                    if (locale.startsWith('en')) {
+                        // US/UK format: Street, City, State ZIP
+                        if (address.street) parts.push(address.street);
+                        if (address.city) parts.push(address.city);
+                        if (address.state) parts.push(address.state);
+                        if (address.postalCode) parts.push(address.postalCode);
+                    } else if (locale.startsWith('de')) {
+                        // German format: Street, Postal Code City
+                        if (address.street) parts.push(address.street);
+                        if (address.postalCode) parts.push(address.postalCode);
+                        if (address.city) parts.push(address.city);
+                    } else if (locale.startsWith('ja')) {
+                        // Japanese format: Postal Code, Prefecture City, Street
+                        if (address.postalCode) parts.push(address.postalCode);
+                        if (address.prefecture) parts.push(address.prefecture);
+                        if (address.city) parts.push(address.city);
+                        if (address.street) parts.push(address.street);
+                    } else {
+                        // Generic format
+                        if (address.street) parts.push(address.street);
+                        if (address.city) parts.push(address.city);
+                        if (address.state) parts.push(address.state);
+                        if (address.postalCode) parts.push(address.postalCode);
+                    }
+
+                    return parts.join(', ');
+                }
+
+                return address;
+            } catch (error) {
+                console.warn('Address formatting error:', error);
+                return address;
+            }
+        };
+
+        // Price formatting
+        const formatPrice = (price, currency = 'USD', field = null) => {
+            if (!price) return '-';
+            try {
+                const num = parseFloat(price);
+                if (isNaN(num)) return price;
+
+                // If we have a field with schema context, use the enhanced formatter
+                if (field && schema) {
+                    return formatCurrency(price, field, schema);
+                }
+
+                // Fallback to basic Intl formatting
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: currency
+                }).format(num);
+            } catch {
+                return price;
+            }
+        };
+
+        // File size formatting
+        const formatFileSize = (bytes, field = null, schema = null) => {
+            if (!bytes) return '-';
+            try {
+                const locale = field?.locale || schema?.locale || 'en-US';
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                if (bytes === 0) return '0 Bytes';
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+                const size = Math.round(bytes / Math.pow(1024, i) * 100) / 100;
+                return `${size.toLocaleString(locale)} ${sizes[i]}`;
+            } catch {
+                return bytes;
+            }
+        };
+
+        // Text truncation
+        const truncateText = (text, maxLength = 50) => {
+            if (!text) return '-';
+            if (text.length <= maxLength) return text;
+            return text.substring(0, maxLength) + '...';
+        };
+
+        // Status badge renderer
+        const getStatusBadge = (status, statusMap = {}) => {
+            const defaultMap = {
+                active: { type: 'success', text: 'Active' },
+                inactive: { type: 'danger', text: 'Inactive' },
+                pending: { type: 'warning', text: 'Pending' },
+                completed: { type: 'success', text: 'Completed' },
+                failed: { type: 'danger', text: 'Failed' }
+            };
+
+            const statusConfig = statusMap[status] || defaultMap[status] || { type: 'info', text: status };
+
+            return h('el-tag', {
+                size: 'small',
+                type: statusConfig.type
+            }, statusConfig.text);
+        };
+
+        // Progress bar renderer
+        const getProgressBar = (value, max = 100, showText = true) => {
+            const percentage = Math.min((value / max) * 100, 100);
+            const color = percentage >= 80 ? 'success' : percentage >= 60 ? 'warning' : 'danger';
+
+            return h('div', { class: 'flex items-center gap-2' }, [
+                h('el-progress', {
+                    percentage: percentage,
+                    status: color,
+                    strokeWidth: 8,
+                    showText: showText
+                })
+            ]);
+        };
+
+        // Table operations column renderer
+        const getOperationsRenderer = (operations) => {
+            return ({ rowData }) => {
+                const buttons = operations.map(op =>
+                    h(ElementPlus.ElButton, {
+                        size: 'small',
+                        type: op.type || 'default',
+                        onClick: () => op.handler(rowData)
+                    }, op.label)
+                );
+
+                return h('div', { class: 'flex gap-2' }, buttons);
+            };
+        };
+
+        return {
+            // Column utilities
+            getColumnWidth,
+            getCellRenderer,
+
+            // Validation utilities
+            getFieldRules,
+            getDefaultValue,
+            validateForm,
+
+            // Formatting utilities
+            formatDate,
+            formatTime,
+            formatDateTime,
+            formatDateWithOptions, // Expose the new enhanced date formatter
+            formatRelativeTime, // Expose the new relative time formatter
+            formatPrice,
+            formatFileSize,
+            truncateText,
+            formatCurrency, // Expose the new currency formatter
+            formatCurrencyWithPosition, // Expose the new currency formatter with custom positioning
+            getCurrencySymbol, // Expose the currency symbol getter
+            formatNumberWithOptions, // Expose the new enhanced number formatter
+            formatPercent, // Expose the new percentage formatter
+            formatPhoneNumber, // Expose the new phone number formatter
+            formatAddress, // Expose the new address formatter
+
+            // UI renderers
+            getStatusBadge,
+            getProgressBar,
+            getOperationsRenderer
+        };
+    };
+</script>
