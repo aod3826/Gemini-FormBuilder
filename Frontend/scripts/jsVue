@@ -1,0 +1,493 @@
+<script>
+  const { createApp, ref, reactive, computed, nextTick, onMounted, watch } = Vue;
+  const { ElMessage, ElMessageBox, ElScrollbar } = ElementPlus;
+  const { Document, Edit, Delete, Upload, View, Setting, Label, ChatDotRound, Star, QuestionFilled, Warning, Tools, List, TrendCharts, Check, Close, Loading, Plus, Calendar, Download, Promotion } = ElementPlusIconsVue;
+
+  const App = {
+    setup() {
+      // Use schema store for schema operations
+      const { schema, hasSavedSchema, allSchemas, selectedSchemaName, isSaving, isLoading, isDeleting, isError, isSuccess, errorMessage, saveSchema, loadSchema, deleteSchema, checkForSavedSchema, updateLocalSchema, getAllSchemas, deleteSchemaByName, loadSchemaByName, loadAllSchemas, setSelectedSchema } =
+        useSchemaStore();
+
+      const {
+        // State
+        formFields,
+        nextFieldId,
+        dragOver,
+        showEditModal,
+        editingField,
+        editingIndex,
+        isEditing,
+        fieldTypes,
+        formName,
+        optionsText,
+        applicationName,
+        targetSheetName,
+        currency,
+        locale,
+
+        // Computed
+        selectedFieldTypeObject,
+        defaultValueInputType,
+
+        // Methods
+        addField,
+        removeField,
+        editField,
+        saveFieldEdit,
+        cancelEdit,
+        clearForm,
+        onDragStart,
+        onDragOver,
+        onDragLeave,
+        onDrop,
+        loadSchemaData,
+        onFieldTypeChange,
+        parseOptionsString,
+      } = useFormBuilder();
+
+      const {
+        // State
+        messages,
+        userInput,
+        isGenerating,
+        chatMessages,
+        examplePrompts,
+        quickActions,
+        generatedSchema,
+        schemaAccepted,
+        geminiCallType,
+        dynamicPromptInputPlaceholder,
+        // Methods
+        sendMessage,
+        startNewChat,
+        clearChat,
+        exportChat,
+        useExamplePrompt,
+        executeQuickAction,
+        formatMessage,
+        formatTimestamp,
+        acceptSchema,
+        clearGeneratedSchema,
+        afterSchemaSave,
+      } = useGeminiChat(loadSchemaData, setSelectedSchema, schema);
+
+      const activeTab = ref("gemini");
+      const activeNav = ref("builder");
+      const inputRows = ref(5);
+      const chatInputRef = ref(null);
+
+      // Computed form schema for display
+      const formSchema = computed(() => {
+        return {
+          id: Date.now().toString(),
+          name: formName.value,
+          applicationName: applicationName.value,
+          targetSheetName: targetSheetName.value,
+          currency: currency.value,
+          locale: locale.value,
+          createdAt: new Date().toISOString(),
+          fields: formFields.value.map((field) => {
+            const { id, ...fieldData } = field;
+            return fieldData;
+          }),
+        };
+      });
+
+      const initSortable = () => {
+        nextTick(() => {
+          console.log("Initializing sortable...");
+          const sortableContainer = document.querySelector(".drop-zone");
+          console.log("Drop zone found:", !!sortableContainer);
+
+          if (sortableContainer && window.Sortable) {
+            // Destroy existing sortable instance if it exists
+            if (sortableContainer.sortable) {
+              sortableContainer.sortable.destroy();
+            }
+
+            // Find the container that holds the form fields
+            const fieldsContainer = sortableContainer.querySelector(".form-fields-container");
+            console.log("Fields container found:", !!fieldsContainer);
+
+            if (!fieldsContainer) {
+              console.warn("Form fields container not found");
+              return;
+            }
+
+            console.log("Creating Sortable instance...");
+            fieldsContainer.sortable = Sortable.create(fieldsContainer, {
+              animation: 150,
+              ghostClass: "sortable-ghost",
+              chosenClass: "sortable-chosen",
+              dragClass: "sortable-drag",
+              handle: ".drag-handle-left", // Only allow dragging from the left drag handle
+              filter: ".field-controls .el-button", // Prevent dragging when clicking buttons
+              preventOnFilter: true,
+              onStart: (evt) => {
+                console.log("Drag started:", evt.oldIndex);
+                evt.item.style.opacity = "0.5";
+                evt.item.classList.add("dragging");
+              },
+              onEnd: (evt) => {
+                console.log("Drag ended:", evt.oldIndex, "->", evt.newIndex);
+                evt.item.style.opacity = "1";
+                evt.item.classList.remove("dragging");
+
+                if (evt.oldIndex !== evt.newIndex) {
+                  const item = formFields.value.splice(evt.oldIndex, 1)[0];
+                  formFields.value.splice(evt.newIndex, 0, item);
+                  ElMessage.success("Field reordered successfully");
+                }
+              },
+              onMove: (evt) => {
+                // Prevent dropping if not a valid move
+                return true;
+              },
+            });
+          }
+        });
+      };
+
+      // Navigation handler
+      const handleNavSelect = (key) => {
+        activeNav.value = key;
+        if (key === "builder") {
+          activeTab.value = "gemini"; // Default to Gemini tab when entering builder
+        }
+      };
+
+      // Build schema object for saving
+      const buildSchemaForSave = () => {
+        return {
+          name: formName.value,
+          fields: formFields.value,
+          applicationName: applicationName.value,
+          targetSheetName: targetSheetName.value,
+          currency: currency.value,
+          locale: locale.value,
+        };
+      };
+
+      // Handle save schema
+      const handleSaveSchema = async () => {
+        const schemaToSave = buildSchemaForSave();
+        const result = await saveSchema(schemaToSave);
+
+        if (result.success) {
+          ElMessage.success(result.message);
+          updateLocalSchema(schemaToSave);
+          selectedSchemaName.value = schemaToSave.applicationName;
+        } else {
+          ElMessage.error(result.error);
+        }
+      };
+
+      // Handle load schema
+      const handleLoadSchema = async () => {
+        const result = await loadSchema();
+
+        if (result.success) {
+          loadSchemaData(result.data);
+          ElMessage.success(result.message);
+        } else if (result.message) {
+          ElMessage.warning(result.message);
+        } else {
+          ElMessage.error(result.error);
+        }
+      };
+
+      // Handle delete schema
+      const handleDeleteSchema = async () => {
+        ElMessageBox.confirm("Are you sure you want to delete the saved form? This action cannot be undone.", "Confirm Delete", {
+          confirmButtonText: "Delete",
+          cancelButtonText: "Cancel",
+          type: "warning",
+          confirmButtonClass: "el-button--danger",
+        })
+          .then(async () => {
+            const result = await deleteSchema();
+
+            if (result.success) {
+              ElMessage.success(result.message);
+            } else {
+              ElMessage.error(result.error);
+            }
+          })
+          .catch(() => {
+            // User cancelled
+          });
+      };
+
+      // Handle get all schemas
+      const handleGetAllSchemas = async () => {
+        const result = await getAllSchemas();
+
+        if (result.success) {
+          ElMessage.success(result.message);
+          return result.data;
+        } else {
+          ElMessage.error(result.error);
+          return null;
+        }
+      };
+
+      // Handle delete schema by name
+      const handleDeleteSchemaByName = async (applicationName) => {
+        ElMessageBox.confirm(`Are you sure you want to delete the schema "${applicationName}"? This action cannot be undone.`, "Confirm Delete", {
+          confirmButtonText: "Delete",
+          cancelButtonText: "Cancel",
+          type: "warning",
+          confirmButtonClass: "el-button--danger",
+        })
+          .then(async () => {
+            const result = await deleteSchemaByName(applicationName);
+
+            if (result.success) {
+              ElMessage.success(result.message);
+            } else {
+              ElMessage.error(result.error);
+            }
+          })
+          .catch(() => {
+            // User cancelled
+          });
+      };
+
+      // Handle load schema by name
+      const handleLoadSchemaByName = async (applicationName) => {
+        const result = await loadSchemaByName(applicationName);
+
+        if (result.success) {
+          loadSchemaData(result.data);
+          ElMessage.success(result.message);
+        } else {
+          ElMessage.error(result.error);
+        }
+      };
+
+      // Handle schema selection
+      const handleSchemaSelection = async (applicationName) => {
+        const result = await setSelectedSchema(applicationName);
+
+        if (result.success) {
+          if (applicationName) {
+            loadSchemaData(result.data);
+            ElMessage.success(result.message);
+          } else {
+            clearForm();
+            ElMessage.info(result.message);
+          }
+        } else {
+          ElMessage.error(result.error);
+        }
+      };
+
+      // Handle new schema
+      const handleNewSchema = async () => {
+        ElMessageBox.confirm("This will clear the current form and start a new schema. Are you sure?", "New Schema", {
+          confirmButtonText: "Create New",
+          cancelButtonText: "Cancel",
+          type: "info",
+        })
+          .then(() => {
+            // Clear the form
+            clearForm();
+
+            // Clear schema selection
+            selectedSchemaName.value = "";
+
+            // Reset schema state
+            schema.value = null;
+            hasSavedSchema.value = false;
+
+            ElMessage.success("New schema started! Add fields and save when ready.");
+          })
+          .catch(() => {
+            // User cancelled
+          });
+      };
+
+      onMounted(async () => {
+        initSortable();
+        // const result = await loadSchema();
+        // if (result.success) {
+        //   loadSchemaData(result.data);
+        // }
+      });
+
+      watch(
+        formFields,
+        () => {
+          nextTick(() => {
+            if (formFields.value.length > 0) {
+              initSortable();
+            }
+          });
+        },
+        { deep: true }
+      );
+      const getFieldOptions = (field) => {
+        if (field.options && Array.isArray(field.options)) {
+          return field.options;
+        }
+
+        if (field.options_string) {
+          return field.options_string
+            .split(/[,\n]/)
+            .map((option) => option.trim())
+            .filter((option) => option.length > 0)
+            .map((option) => ({
+              label: option,
+              value: option,
+            }));
+        }
+
+        return [];
+      };
+
+      const handleSuggestModifications = async () => {
+        inputRows.value = 6;
+        await nextTick();
+        try {
+          const elTextarea = chatInputRef.value?.textarea;
+          if (elTextarea) {
+            elTextarea.focus();
+            // Move caret to end and ensure scroll bottom
+            elTextarea.selectionStart = elTextarea.value.length;
+            elTextarea.selectionEnd = elTextarea.value.length;
+            elTextarea.scrollTop = elTextarea.scrollHeight;
+          }
+        } catch (err) {
+          // ignore
+        }
+      };
+
+      return {
+        // Schema store state
+        schema,
+        hasSavedSchema,
+        allSchemas,
+        selectedSchemaName,
+        isSaving,
+        isLoading,
+        isDeleting,
+        isError,
+        isSuccess,
+        errorMessage,
+
+        // Form builder state from composable
+        formFields,
+        nextFieldId,
+        dragOver,
+        showEditModal,
+        editingField,
+        editingIndex,
+        isEditing,
+        fieldTypes,
+        formName,
+        optionsText,
+        applicationName,
+        targetSheetName,
+        currency,
+        locale,
+
+        // Computed properties from composable
+        selectedFieldTypeObject,
+        defaultValueInputType,
+
+        // Application-specific state
+        activeTab,
+        activeNav,
+        formSchema,
+
+        // Schema store methods
+        handleSaveSchema,
+        handleLoadSchema,
+        handleDeleteSchema,
+        handleGetAllSchemas,
+        handleDeleteSchemaByName,
+        handleLoadSchemaByName,
+        handleSchemaSelection,
+        handleNewSchema,
+
+        // Form builder methods from composable
+        addField,
+        removeField,
+        editField,
+        saveFieldEdit,
+        cancelEdit,
+        clearForm,
+        onDragStart,
+        onDragOver,
+        onDragLeave,
+        onDrop,
+        onFieldTypeChange,
+
+        // Gemini chat state
+        messages,
+        userInput,
+        isGenerating,
+        chatMessages,
+        examplePrompts,
+        quickActions,
+        geminiCallType,
+        generatedSchema,
+        schemaAccepted,
+        acceptSchema,
+        dynamicPromptInputPlaceholder,
+        // Gemini chat methods
+        sendMessage,
+        startNewChat,
+        clearChat,
+        exportChat,
+        useExamplePrompt,
+        executeQuickAction,
+        formatMessage,
+        formatTimestamp,
+        acceptSchema,
+        clearGeneratedSchema,
+        afterSchemaSave,
+
+        // Application-specific methods
+        initSortable,
+        handleNavSelect,
+        getFieldOptions,
+
+        // Schema action handlers
+        handleSuggestModifications,
+
+        // Chat input control
+        inputRows,
+        chatInputRef,
+      };
+    },
+  };
+
+  const app = createApp(App);
+  app.use(ElementPlus);
+
+  // Register Element Plus icons
+  app.component("Document", Document);
+  app.component("Edit", Edit);
+  app.component("Delete", Delete);
+  app.component("Upload", Upload);
+  app.component("View", View);
+  app.component("Setting", Setting);
+  app.component("Label", Label);
+  app.component("Promotion", Promotion);
+  app.component("Star", Star);
+  app.component("QuestionFilled", QuestionFilled);
+  app.component("Warning", Warning);
+  app.component("Tools", Tools);
+  app.component("List", List);
+  app.component("TrendCharts", TrendCharts);
+  app.component("Check", Check);
+  app.component("Close", Close);
+  app.component("Loading", Loading);
+  app.component("Plus", Plus);
+  app.component("Calendar", Calendar);
+  app.component("Download", Download);
+
+  app.mount("#app");
+</script>
