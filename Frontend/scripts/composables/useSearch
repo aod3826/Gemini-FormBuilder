@@ -1,0 +1,70 @@
+<script>
+    const useSearch = (allSheetsData, schema) => {
+        const searchQuery = ref('');
+        const debouncedSearchQuery = ref('');
+        const searchTimeout = ref(null);
+
+        // Debounce function
+        const debounce = (func, delay) => {
+            return (...args) => {
+                clearTimeout(searchTimeout.value);
+                searchTimeout.value = setTimeout(() => {
+                    func.apply(this, args);
+                }, delay);
+            };
+        };
+
+        // Debounced search function
+        const debouncedSearch = debounce((query) => {
+            debouncedSearchQuery.value = query;
+        }, 300);
+
+        // Watch for search query changes
+        watch(searchQuery, (newQuery) => {
+            debouncedSearch(newQuery);
+        });
+
+        // Computed property for current data based on schema
+        const currentData = computed(() => {
+            if (!schema.value || !allSheetsData.value) {
+                return [];
+            }
+            return allSheetsData.value[schema.value.targetSheetName] || [];
+        });
+
+        // Filter data based on search query
+        const filteredData = computed(() => {
+            const data = currentData.value;
+
+            if (!data || !Array.isArray(data)) {
+                return [];
+            }
+
+            if (!debouncedSearchQuery.value.trim()) {
+                return data;
+            }
+
+            const query = debouncedSearchQuery.value.toLowerCase().trim();
+
+            return data.filter(record => {
+                return Object.values(record).some(value => {
+                    if (value === null || value === undefined) return false;
+                    return String(value).toLowerCase().includes(query);
+                });
+            });
+        });
+
+        // Clear search
+        const clearSearch = () => {
+            searchQuery.value = '';
+            debouncedSearchQuery.value = '';
+        };
+
+        return {
+            searchQuery,
+            debouncedSearchQuery,
+            filteredData,
+            clearSearch
+        };
+    };
+</script>
