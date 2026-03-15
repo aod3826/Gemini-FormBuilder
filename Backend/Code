@@ -1,0 +1,629 @@
+const FOLDER_NAME = "Attachments";
+function doGet(e) {
+  const pages = {
+    index: "CRUD Application",
+    formbuilder: "Gemini Form Builder",
+    unauthorized: "Access Denied",
+  };
+
+  // Determine requested page and enforce owner-only access for formbuilder
+  let pageKey = "index";
+  if (e && e.parameter && e.parameter.p === "formbuilder") {
+     pageKey = isSpreadsheetOwner() ? "formbuilder" : "unauthorized";
+    // pageKey = isSpreadsheetOwner() ? "formbuilder" : "formbuilder";
+  }
+
+  const page = pageKey === "formbuilder" ? "Frontend/index.html" : pageKey === "unauthorized" ? "Frontend/unauthorized.html" : "Frontend/userIndex.html";
+
+  Logger.log("Loading page: " + page);
+  var t = HtmlService.createTemplateFromFile(page);
+  return t.evaluate().setTitle(pages[pageKey]);
+}
+
+function isSpreadsheetOwner() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const file = DriveApp.getFileById(ss.getId());
+    const ownerEmail = file.getOwner().getEmail();
+    const userEmail = Session.getActiveUser().getEmail();
+    return userEmail && ownerEmail && userEmail.toLowerCase() === ownerEmail.toLowerCase();
+  } catch (error) {
+    Logger.log("Ownership check failed: " + error.toString());
+    return false;
+  }
+}
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu("Gemini Form Builder").addItem("Enter Gemini API Key", "showApiKeyDialog").addToUi();
+}
+
+function showApiKeyDialog() {
+  const html = HtmlService.createHtmlOutputFromFile("Frontend/ApiKeyDialog").setWidth(420).setHeight(220);
+  SpreadsheetApp.getUi().showModalDialog(html, "Enter Gemini API Key");
+}
+
+function saveApiKey(key) {
+  PropertiesService.getScriptProperties().setProperty("GEMINI_API_KEY", key || "");
+  return "Saved";
+}
+function getApiKey() {
+  const properties = PropertiesService.getScriptProperties();
+  return properties.getProperty("GEMINI_API_KEY");
+}
+
+function saveFormSchema(schema) {
+  try {
+    // const properties = PropertiesService.getScriptProperties();
+    // properties.setProperty("APPLICATION_SCHEMA", JSON.stringify(schema));
+    const result = saveApplicationSchemaToSheet(schema);
+    createSheetWithHeaders(schema);
+    return {
+      success: true,
+      message: "Form schema saved successfully!",
+      data: result,
+    };
+  } catch (error) {
+    throw new Error("Failed to save form schema: " + error.toString());
+  }
+}
+
+function getApplicationSchema() {
+  try {
+    // First try to get from Script Properties (legacy)
+    const properties = PropertiesService.getScriptProperties();
+    const legacySchema = properties.getProperty("APPLICATION_SCHEMA");
+    if (legacySchema) {
+      return JSON.parse(legacySchema);
+    }
+
+    // If no legacy schema, try to get the most recent one from the sheet
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = "Application Schemas";
+
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      Logger.log("Application Schemas sheet not found");
+      return null;
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log("No schemas found in Application Schemas sheet");
+      return null;
+    }
+
+    // Get the most recent schema (last row)
+    const lastRow = data[data.length - 1];
+    const schemaString = lastRow[2]; // Schema column is index 2
+
+    if (schemaString) {
+      return JSON.parse(schemaString);
+    }
+
+    return null;
+  } catch (error) {
+    Logger.log("Error loading latest form schema: " + error.toString());
+    throw new Error("Failed to load form schema: " + error.toString());
+  }
+}
+
+function getApplicationSchemaByName(applicationName) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = "Application Schemas";
+
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      Logger.log("Application Schemas sheet not found");
+      return null;
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log("No schemas found in Application Schemas sheet");
+      return null;
+    }
+
+    const headers = data[0];
+    const appNameColumnIndex = headers.indexOf("Application Name");
+
+    if (appNameColumnIndex === -1) {
+      throw new Error("Application Name column not found");
+    }
+
+    // Find the row with the specified application name
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][appNameColumnIndex] === applicationName) {
+        const schemaString = data[i][2]; // Schema column is index 2
+        if (schemaString) {
+          return JSON.parse(schemaString);
+        }
+        break;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    Logger.log("Error loading schema by name: " + error.toString());
+    throw new Error("Failed to load schema by name: " + error.toString());
+  }
+}
+
+function deleteLatestFormSchema() {
+  try {
+    const properties = PropertiesService.getScriptProperties();
+    properties.deleteProperty("APPLICATION_SCHEMA");
+    return true;
+  } catch (error) {
+    Logger.log("Error deleting latest form schema: " + error.toString());
+    throw new Error("Failed to delete form schema: " + error.toString());
+  }
+}
+
+function saveFormSubmission(formData, schemaId) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = `Form_${schemaId}`;
+
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      const headers = ["Timestamp", "Submission ID", ...Object.keys(formData)];
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+
+    const submissionId = Utilities.getUuid();
+    const timestamp = new Date();
+    const values = [timestamp, submissionId, ...Object.values(formData)];
+
+    sheet.appendRow(values);
+
+    Logger.log("Form submission saved successfully");
+    return true;
+  } catch (error) {
+    Logger.log("Error saving form submission: " + error.toString());
+    throw new Error("Failed to save form submission: " + error.toString());
+  }
+}
+
+function PARSE(JSONData, fldName) {
+  if (!JSONData) {
+    return "";
+  }
+  return JSON.parse(JSONData)[fldName];
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function JSONToArray(jsonArray) {
+  var header = [];
+  for (const [k, v] of Object.entries(jsonArray[0])) {
+    header.push(k);
+  }
+  return jsonArray.map((r) => {
+    const a = [];
+    for (let i = 0; i < header.length; ++i) {
+      a.push(r[header[i]]);
+    }
+    return a;
+  });
+}
+
+function CreateFile() {
+  var name = "your-spreadsheet-name";
+  var folderId = "your-folder-id";
+
+  var resource = {
+    title: name,
+    mimeType: MimeType.GOOGLE_SHEETS,
+    parents: [{ id: folderId }],
+  };
+
+  var fileJson = Drive.Files.insert(resource);
+  var fileId = fileJson.id;
+}
+function createSpreadSheetInFolder(name, folder) {
+  var ss = SpreadsheetApp.create(name);
+  var id = ss.getId();
+  var file = DriveApp.getFileById(id);
+  folder.addFile(file);
+  return ss;
+}
+
+function getPageUrl(page) {
+  let url = ScriptApp.getService().getUrl().replace("/dev", "/exec");
+  if (page) {
+    url += "?p=" + page;
+  }
+  return url;
+}
+
+function render(page, title, data) {
+  const template = HtmlService.createTemplateFromFile(page);
+  let html = template.evaluate().setTitle(title).addMetaTag("viewport", "width=device-width, initial-scale=1").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return html;
+}
+
+function createSheetWithHeaders(schema) {
+  try {
+    if (!schema || !schema.fields || !schema.targetSheetName) {
+      throw new Error("Invalid schema or missing target sheet name");
+    }
+
+    const validFields = schema.fields.filter((field) => field.name && field.name.trim());
+    if (validFields.length === 0) {
+      throw new Error("No valid fields found in schema. Each field must have a name.");
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(schema.targetSheetName);
+
+    const headers = ["id"];
+    if (!sheet) {
+      sheet = ss.insertSheet(schema.targetSheetName);
+    }
+    validFields.forEach((field) => {
+      headers.push(field.name.trim());
+    });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } catch (error) {
+    Logger.log("Error creating sheet with headers: " + error.toString());
+    throw new Error("Failed to create sheet with headers: " + error.toString());
+  }
+}
+
+function saveApplicationSchemaToSheet(schema) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = "Application Schemas";
+
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      const headers = ["Created_Date", "Application Name", "Schema"];
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+
+    const createdDate = new Date();
+    const applicationName = schema.applicationName || "Unnamed Application";
+    const schemaString = JSON.stringify(schema);
+
+    // Check if application name already exists
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const appNameColumnIndex = headers.indexOf("Application Name");
+
+    if (appNameColumnIndex === -1) {
+      throw new Error("Application Name column not found");
+    }
+
+    // Find existing row with same application name
+    let existingRowIndex = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][appNameColumnIndex] === applicationName) {
+        existingRowIndex = i + 1; // +1 because sheet rows are 1-indexed
+        break;
+      }
+    }
+
+    const values = [createdDate, applicationName, schemaString];
+
+    if (existingRowIndex > 0) {
+      // Update existing row
+      sheet.getRange(existingRowIndex, 1, 1, values.length).setValues([values]);
+      Logger.log(`Application schema updated for: ${applicationName}`);
+    } else {
+      // Add new row
+      sheet.appendRow(values);
+      Logger.log(`New application schema saved for: ${applicationName}`);
+    }
+
+    return JSON.stringify([...data, values]);
+  } catch (error) {
+    Logger.log("Error saving application schema to sheet: " + error.toString());
+    throw new Error("Failed to save application schema to sheet: " + error.toString());
+  }
+}
+
+function getAllApplicationSchemas() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = "Application Schemas";
+
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      Logger.log("Application Schemas sheet not found");
+      return [];
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log("No schemas found in Application Schemas sheet");
+      return [];
+    }
+    console.log("All Application Schemas: ", data);
+    return JSON.stringify(data);
+  } catch (error) {
+    Logger.log("Error fetching application schemas: " + error.toString());
+    throw new Error("Failed to fetch application schemas: " + error.toString());
+  }
+}
+
+function deleteApplicationSchemaByName(applicationName) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = "Application Schemas";
+
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      Logger.log("Application Schemas sheet not found");
+      return false;
+    }
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      Logger.log("No schemas found in Application Schemas sheet");
+      return false;
+    }
+
+    const headers = data[0];
+    const appNameColumnIndex = headers.indexOf("Application Name");
+
+    if (appNameColumnIndex === -1) {
+      throw new Error("Application Name column not found");
+    }
+
+    // Find row with matching application name
+    let rowToDelete = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][appNameColumnIndex] === applicationName) {
+        rowToDelete = i + 1; // +1 because sheet rows are 1-indexed
+        break;
+      }
+    }
+
+    if (rowToDelete === -1) {
+      Logger.log(`Application schema not found: ${applicationName}`);
+      return false;
+    }
+
+    // Delete the row
+    sheet.deleteRow(rowToDelete);
+    Logger.log(`Application schema deleted: ${applicationName}`);
+    return true;
+  } catch (error) {
+    Logger.log("Error deleting application schema: " + error.toString());
+    throw new Error("Failed to delete application schema: " + error.toString());
+  }
+}
+
+function getAllSheetData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheets = ss.getSheets();
+  const sheetData = {};
+  sheets.forEach((sheet) => {
+    if (sheet.getName() !== "Application Schemas") {
+      sheetData[sheet.getName()] = sheet.getDataRange().getValues();
+    }
+  });
+  return JSON.stringify(sheetData);
+}
+
+const executeAction = ({ action, sheetName, id = null, data = null, headers = null }) => {
+  let res = null;
+  try {
+    if (!sheetName) {
+      const schema = getApplicationSchema();
+      if (!schema) {
+        throw new Error("No schema found");
+      }
+      sheetName = schema.targetSheetName;
+    }
+
+    const orm = new ORM(sheetName, headers);
+
+    switch (action) {
+      case "add":
+        res = orm.create(data);
+
+        break;
+      case "update":
+        res = orm.updateById(id, data);
+
+        break;
+      case "delete":
+        res = orm.deleteById(id);
+
+        break;
+      case "getAll":
+        res = orm.readAll();
+        break;
+      case "getOne":
+        res = orm.readById(id);
+        break;
+      default:
+        return false;
+    }
+
+    return JSON.stringify(res);
+  } catch (error) {
+    console.log(error);
+    return error;
+  }
+};
+
+function uploadFile(obj) {
+  var blob = Utilities.newBlob(Utilities.base64Decode(obj.data), obj.mimeType, obj.fileName);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var SSID = ss.getId();
+  var fileInDrive = DriveApp.getFolderById(SSID);
+  var parent_id = fileInDrive.getParents().next().getId();
+  var par_fdr = DriveApp.getFolderById(parent_id);
+  try {
+    var newFdr = par_fdr.getFoldersByName(FOLDER_NAME).next();
+  } catch (e) {
+    var newFdr = par_fdr.createFolder(FOLDER_NAME);
+  }
+
+  var id = newFdr.createFile(blob).getId();
+  const url = obj.mimeType.includes("image") ? `https://drive.google.com/thumbnail?id=${id}&sz=w1000` : `https://drive.google.com/file/d/${id}/view?usp=sharing`;
+  return { name: obj.fileName, url, uid: obj.uid };
+}
+
+// ===== GEMINI CHAT SERVICE INTEGRATION (using Library) =====
+
+/**
+ * Helper to create a GeminiService instance
+ */
+function getGeminiServiceInstance() {
+  const apiKey = getApiKey(); // assumes you already have this helper
+  if (!apiKey) {
+    throw new Error("No Gemini API key configured. Please set it first.");
+  }
+  return GeminiService.GeminiService(apiKey); // from the library
+}
+
+/**
+ * Test Gemini API connection
+ */
+function testGeminiConnection() {
+  try {
+    const geminiService = getGeminiServiceInstance();
+    const result = geminiService.testConnection();
+
+    if (result.success) {
+      Logger.log("Gemini connection test successful");
+      return {
+        success: true,
+        message: result.message,
+        testSchema: result.testSchema,
+      };
+    } else {
+      Logger.log("Gemini connection test failed: " + result.error);
+      return {
+        success: false,
+        error: result.error,
+      };
+    }
+  } catch (error) {
+    Logger.log("Error testing Gemini connection: " + error.toString());
+    return {
+      success: false,
+      error: "Connection test failed: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Send message to Gemini and get form schema
+ */
+function sendMessageToGemini(userPrompt, previousResponse = null) {
+  try {
+    const geminiService = getGeminiServiceInstance();
+    const result = geminiService.sendMessage(userPrompt, previousResponse);
+
+    if (result.success) {
+      Logger.log("Gemini message sent successfully");
+      return {
+        success: true,
+        schema: result.schema,
+        message: result.message,
+      };
+    } else {
+      Logger.log("Gemini message failed: " + result.error);
+      return {
+        success: false,
+        error: result.error,
+        details: result.details,
+      };
+    }
+  } catch (error) {
+    Logger.log("Error sending message to Gemini: " + error.toString());
+    return {
+      success: false,
+      error: "Failed to send message: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Get Gemini service status
+ */
+function getGeminiServiceStatus() {
+  try {
+    const geminiService = getGeminiServiceInstance();
+    return geminiService.getStatus();
+  } catch (error) {
+    Logger.log("Error getting Gemini service status: " + error.toString());
+    return {
+      error: "Failed to get service status: " + error.toString(),
+    };
+  }
+}
+
+/**
+ * Check if Gemini API key is configured
+ */
+function checkGeminiApiKey() {
+  try {
+    const apiKey = getApiKey();
+    if (apiKey) {
+      Logger.log("✅ Gemini API key is configured");
+      Logger.log("API Key length: " + apiKey.length);
+      Logger.log("First 10 characters: " + apiKey.substring(0, 10) + "...");
+      return {
+        configured: true,
+        length: apiKey.length,
+        preview: apiKey.substring(0, 10) + "...",
+      };
+    } else {
+      Logger.log("❌ No Gemini API key found");
+      return {
+        configured: false,
+        message: "Please set the Gemini API key using the Form Builder menu",
+      };
+    }
+  } catch (error) {
+    Logger.log("❌ Error checking API key: " + error.toString());
+    return {
+      configured: false,
+      error: error.toString(),
+    };
+  }
+}
+
+/**
+ * Test GeminiService instantiation via Library
+ */
+function testGeminiServiceInstantiation() {
+  try {
+    Logger.log("🧪 Testing GeminiService instantiation...");
+
+    const apiKeyCheck = checkGeminiApiKey();
+    if (!apiKeyCheck.configured) {
+      Logger.log("❌ Cannot test service - no API key configured");
+      return apiKeyCheck;
+    }
+
+    Logger.log("Creating GeminiService instance...");
+    const geminiService = getGeminiServiceInstance();
+
+    Logger.log("✅ Service instantiated successfully");
+    Logger.log("Service status: " + JSON.stringify(geminiService.getStatus(), null, 2));
+
+    return {
+      success: true,
+      message: "Service instantiated successfully",
+      status: geminiService.getStatus(),
+    };
+  } catch (error) {
+    Logger.log("❌ Failed to instantiate GeminiService: " + error.toString());
+    Logger.log("Error stack: " + error.stack);
+    return {
+      success: false,
+      error: error.toString(),
+      stack: error.stack,
+    };
+  }
+}
