@@ -1,0 +1,26 @@
+<div>
+    <div>
+        <div>
+            <h1>{{ applicationName }}</h1>
+            <p>Welcome to your form management dashboard</p>
+        </div>
+    </div>
+
+    <div>
+        <el-row :gutter="20">
+            <el-col :span="24">
+                <el-card>
+                    <template #header>
+                        <div>
+                            <span>Dashboard Overview</span>
+                        </div>
+                    </template>
+                    <div>
+                        <el-skeleton :rows="6" animated />
+                        <p>Dashboard content will be implemented here.</p>
+                    </div>
+                </el-card>
+            </el-col>
+        </el-row>
+    </div>
+</div>
