@@ -1,0 +1,197 @@
+<el-dialog v-model="showEditModal" :show-close="false" width="900px" :close-on-click-modal="false"
+    class="field-edit-modal">
+    <template #header="{ close, titleId, titleClass }">
+        <div class="custom-dialog-header">
+            <h4 :id="titleId" :class="titleClass">Edit Field Configuration</h4>
+            <el-button type="text" @click="close" class="close-button">
+                <el-icon>
+                    <Close />
+                </el-icon>
+            </el-button>
+        </div>
+    </template>
+    <div v-if="editingField" class="modal-content">
+        <!-- Field Type Selection Card -->
+        <el-card class="field-type-property-card" shadow="hover">
+            <template #header>
+                <div class="card-header">
+                    <el-icon class="header-icon">
+                        <Setting />
+                    </el-icon>
+                    <span>Field Type</span>
+                </div>
+            </template>
+            <el-form-item label="Field Type:" class="no-margin">
+                <el-select v-model="editingField.type" @change="onFieldTypeChange"
+                    placeholder="Please select a field type" style="width: 100%" size="large">
+                    <el-option v-for="ft in fieldTypes" :key="ft.type" :label="ft.label" :value="ft.type">
+                        <div class="field-type-option">
+                            <i v-if="ft.icon && ft.icon.includes('mdi')" :class="ft.icon" class="option-icon"></i>
+                            <el-icon v-else class="option-icon">
+                                <Document />
+                            </el-icon>
+                            <span>{{ ft.label }}</span>
+                        </div>
+                    </el-option>
+                </el-select>
+            </el-form-item>
+        </el-card>
+
+        <!-- Common Properties Card -->
+        <el-card class="common-properties-card" shadow="hover">
+            <template #header>
+                <div class="card-header">
+                    <el-icon class="header-icon">
+                        <Edit />
+                    </el-icon>
+                    <span>Common Properties</span>
+                </div>
+            </template>
+
+            <el-form-item label="Field Name" class="form-item-modern">
+                <el-input v-model="editingField.name" placeholder="field_name" size="large">
+
+                </el-input>
+            </el-form-item>
+
+            <el-form-item label="Label" class="form-item-modern">
+                <el-input v-model="editingField.label" placeholder="Field Label" size="large">
+
+                </el-input>
+            </el-form-item>
+
+            <el-form-item label="Placeholder" class="form-item-modern">
+                <el-input v-model="editingField.placeholder" placeholder="Enter placeholder text" size="large">
+
+                </el-input>
+            </el-form-item>
+
+            <el-form-item label="Default Value" class="form-item-modern">
+                <el-input :type="defaultValueInputType" v-model="editingField.defaultValue" placeholder="Default value"
+                    size="large">
+
+                </el-input>
+            </el-form-item>
+
+            <el-form-item label="Helper Text" class="form-item-modern">
+                <el-input v-model="editingField.helperText" placeholder="Additional help text" size="large">
+
+                </el-input>
+            </el-form-item>
+
+            <el-form-item class="form-item-modern no-margin">
+                <el-checkbox v-model="editingField.required" size="large">
+                    <el-icon class="checkbox-icon">
+                        <Warning />
+                    </el-icon>
+                    Required Field
+                </el-checkbox>
+            </el-form-item>
+        </el-card>
+
+
+
+        <el-card class="type-specific-card" shadow="hover"
+            v-if="selectedFieldTypeObject && selectedFieldTypeObject.attributes && selectedFieldTypeObject.attributes.length > 0">
+            <template #header>
+                <div class="card-header">
+                    <el-icon class="header-icon">
+                        <Tools />
+                    </el-icon>
+                    <span>Type-Specific Properties</span>
+                </div>
+            </template>
+
+            <!-- Render type-specific attributes -->
+            <template v-for="attr in selectedFieldTypeObject.attributes" :key="attr.name">
+                <!-- Number inputs -->
+                <el-form-item v-if="attr.dataType === 'number'" :label="attr.label" class="form-item-modern">
+                    <el-input v-model="editingField[attr.name]" type="number"
+                        :placeholder="attr.placeholder || `Enter ${attr.label.toLowerCase()}`" size="large">
+                        <template #prefix>
+                            <el-icon>
+                                <Document />
+                            </el-icon>
+                        </template>
+                    </el-input>
+                </el-form-item>
+
+                <!-- String inputs -->
+                <el-form-item v-else-if="attr.dataType === 'string'" :label="attr.label" class="form-item-modern">
+                    <el-input v-model="editingField[attr.name]" :type="attr.htmlType || 'text'"
+                        :placeholder="attr.placeholder || `Enter ${attr.label.toLowerCase()}`" size="large">
+                        <template #prefix>
+                            <el-icon>
+                                <Document />
+                            </el-icon>
+                        </template>
+                    </el-input>
+                </el-form-item>
+
+                <!-- Boolean inputs -->
+                <el-form-item v-else-if="attr.dataType === 'boolean'" class="form-item-modern no-margin">
+                    <el-checkbox v-model="editingField[attr.name]" size="large">
+                        <el-icon class="checkbox-icon">
+                            <Check />
+                        </el-icon>
+                        {{ attr.label }}
+                    </el-checkbox>
+                </el-form-item>
+
+                <!-- Select inputs -->
+                <el-form-item v-else-if="attr.dataType === 'select_string'" :label="attr.label"
+                    class="form-item-modern">
+                    <el-select v-model="editingField[attr.name]" :placeholder="`Select ${attr.label.toLowerCase()}`"
+                        style="width: 100%" size="large">
+                        <el-option v-for="value in attr.values" :key="value" :label="value" :value="value">
+                        </el-option>
+                    </el-select>
+                </el-form-item>
+
+                <!-- Options string inputs (for select/radio options) -->
+                <el-form-item v-else-if="attr.dataType === 'options_string'" :label="attr.label"
+                    class="form-item-modern">
+                    <div class="options-container">
+                        <el-input v-model="editingField[attr.name]" type="textarea" :rows="4"
+                            :placeholder="attr.placeholder || 'value1,value2,value3'" size="large">
+                            <template #prefix>
+                                <el-icon>
+                                    <List />
+                                </el-icon>
+                            </template>
+                        </el-input>
+                        <div class="options-help-text">
+                            <small>Format: Comma separated values</small>
+                        </div>
+                    </div>
+                </el-form-item>
+
+                <!-- Date inputs -->
+                <el-form-item v-else-if="attr.htmlType === 'date'" :label="attr.label" class="form-item-modern">
+                    <el-date-picker v-model="editingField[attr.name]" type="date"
+                        :placeholder="`Select ${attr.label.toLowerCase()}`" style="width: 100%" size="large">
+                    </el-date-picker>
+                </el-form-item>
+                <el-form-item v-else :label="attr.label" class="form-item-modern">
+                    <el-input v-model="editingField[attr.name]" type="text"
+                        :placeholder="attr.placeholder || `Enter ${attr.label.toLowerCase()}`" size="large">
+                    </el-input>
+                </el-form-item>
+            </template>
+        </el-card>
+
+
+    </div>
+
+    <template #footer>
+        <div class="custom-dialog-footer">
+            <el-button @click="cancelEdit" size="large" plain>Cancel</el-button>
+            <el-button type="primary" @click="saveFieldEdit" size="large" :loading="isEditing">
+                <el-icon v-if="!isEditing">
+                    <Check />
+                </el-icon>
+                {{ isEditing ? 'Saving...' : 'Save Changes' }}
+            </el-button>
+        </div>
+    </template>
+</el-dialog>
