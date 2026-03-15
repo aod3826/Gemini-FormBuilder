@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@5.8.55/css/materialdesignicons.min.css" />
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.2.0/css/all.css" />
+    <title>Dynamic Form Application</title>
+    <?!= include('Frontend/styles/userStyles'); ?>
+</head>
+
+<body>
+    <div id="app">
+        <el-container>
+            <el-header style="background-color: #fff; border-bottom: 1px solid #e4e7ed; padding: 0;">
+                <el-menu :default-active="activeApplication" mode="horizontal" @select="handleApplicationMenuSelect"
+                    style="border-bottom: none;">
+                    <el-menu-item v-for="schemaObj in allSchemas" :key="schemaObj['Application Name']"
+                        :index="schemaObj['Application Name']">
+                        <span style="font-size: 20px; font-weight: 800;">{{ schemaObj['Application Name'] }}</span>
+                    </el-menu-item>
+                </el-menu>
+            </el-header>
+            <el-main style="background-color: #f5f7fa; padding: 20px;">
+                <?!= include('Frontend/components/crudTable'); ?>
+            </el-main>
+        </el-container>
+        <el-dialog v-model="showEditModal" :title="isEditingRecord ? 'Edit Record' : 'Add Record'" width="50%"
+            :close-on-click-modal="false" :close-on-press-escape="false">
+            <el-card shadow="never" style="border: none;" v-loading="isLoading">
+                <?!= include('Frontend/components/dynamicForm'); ?>
+            </el-card>
+        </el-dialog>
+    </div>
+
+    <?!= include('Frontend/scripts/composables/useTableColumns'); ?>
+    <?!= include('Frontend/scripts/composables/useSchemaStore'); ?>
+    <?!= include('Frontend/scripts/composables/useDataStore'); ?>
+    <?!= include('Frontend/scripts/composables/useFormatters'); ?>
+    <?!= include('Frontend/scripts/composables/useDynamicForm'); ?>
+    <?!= include('Frontend/scripts/composables/useSearch'); ?>
+    <?!= include('Frontend/scripts/userScripts'); ?>
+</body>
+
+</html>
