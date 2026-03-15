@@ -1,0 +1,65 @@
+<el-aside width="320px" class="sidebar">
+  <div class="block" style="margin-bottom: 10px">
+    <!-- <h3 class="title is-6">Application Schemas</h3> -->
+    <el-select v-model="selectedSchemaName" placeholder="Select Application" @change="handleSchemaSelection" style="width: 100%; margin-bottom: 10px" clearable>
+      <el-option v-for="schema in allSchemas" :key="schema['Application Name']" :label="schema['Application Name']" :value="schema['Application Name']">
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span>{{ schema['Application Name'] }}</span>
+          <small style="color: #999">{{ new Date(schema['Created_Date']).toLocaleDateString() }}</small>
+        </div>
+      </el-option>
+    </el-select>
+  </div>
+  <div class="block" style="margin-top: 0">
+    <p class="subtitle is-6">Drag fields to build your form</p>
+  </div>
+
+  <!-- Field Palette -->
+  <div class="block">
+    <div class="field-palette">
+      <div v-for="fieldType in fieldTypes" :key="fieldType.type" class="field-type-card" draggable="true" @dragstart="onDragStart($event, fieldType)">
+        <div class="field-icon">
+          <i :class="fieldType.icon"></i>
+        </div>
+        <div class="is-size-7 has-text-weight-semibold">{{ fieldType.label }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="block">
+    <div style="display: flex; justify-content: space-around; margin-bottom: 15px">
+      <el-popover placement="top" :width="150" trigger="hover">
+        <template #reference>
+          <el-button type="danger" style="width: 60px; height: 60px; font-size: 24px" @click="handleDeleteSchema" :disabled="!hasSavedSchema" :loading="isDeleting">
+            <el-icon>
+              <Delete />
+            </el-icon>
+          </el-button>
+        </template>
+        <span>Delete Application</span>
+      </el-popover>
+      <el-popover placement="top" :width="150" trigger="hover">
+        <template #reference>
+          <el-button type="success" style="width: 60px; height: 60px; font-size: 24px" @click="handleNewSchema">
+            <el-icon>
+              <Plus />
+            </el-icon>
+          </el-button>
+        </template>
+        <span>New Application</span>
+      </el-popover>
+
+      <el-popover placement="top" :width="150" trigger="hover">
+        <template #reference>
+          <el-button type="primary" style="width: 60px; height: 60px; font-size: 24px" @click="handleSaveSchema" :loading="isSaving">
+            <el-icon>
+              <Document />
+            </el-icon>
+          </el-button>
+        </template>
+        <span>Save Application</span>
+      </el-popover>
+    </div>
+  </div>
+</el-aside>
