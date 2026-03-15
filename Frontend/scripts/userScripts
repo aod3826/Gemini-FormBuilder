@@ -1,0 +1,132 @@
+<script>
+    const { createApp, ref, reactive, computed, onMounted, h, readonly, watch } = Vue;
+    const { ElMessage, ElMessageBox, ElMenu, ElMenuItem, ElIcon } = ElementPlus;
+    const {
+        Plus,
+        Edit,
+        Delete,
+        View,
+        Search,
+    } = ElementPlusIconsVue;
+
+    const App = {
+        setup() {
+            const { schema, allSchemas, selectedSchemaName, setSelectedSchema, loadAllSchemas } = useSchemaStore();
+            const { data, allSheetsData, isLoading, isError, isSuccess, errorMsg, successMsg, addNewRecord, updateRecord, deleteRecord, uploadFile } = useDataStore();
+
+            const activeNav = ref('allItems');
+            const activeApplication = ref('');
+            const isEditingRecord = ref(false);
+            onMounted(async () => {
+                await loadAllSchemas();
+                activeApplication.value = allSchemas.value[0]['Application Name'];
+                handleApplicationMenuSelect(activeApplication.value);
+
+            });
+            const dynamicFormComponent = computed(() => {
+                if (schema.value && schema.value.fields) {
+                    return generateDynamicForm(schema.value.fields, formData.value);
+                }
+                return null;
+            });
+
+            const handleAddNewRecord = () => {
+                currentSchema.value = schema.value;
+                resetFormToEmpty();
+                isEditingRecord.value = false;
+                showEditModal.value = true;
+            }
+
+            const handleEditRecord = (record) => {
+                currentSchema.value = schema.value;
+                initializeFormWithData(record);
+                isEditingRecord.value = true;
+                showEditModal.value = true;
+            }
+
+            const handleDeleteRecord = (record) => {
+                deleteRecord(record.id, schema.value.targetSheetName);
+            }
+            const uploadAttachment = async (file, fieldName) => {
+                console.log("uploadAttachment", file);
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            const data = e.target.result.split(",");
+                            const obj = {
+                                fileName: file.name,
+                                mimeType: data[0].match(/:(\w.+);/)[1],
+                                data: data[1],
+                                uid: file.uid || file.name, // Use name as fallback if uid doesn't exist
+                            };
+                            const res = await uploadFile(obj);
+                            formData.value[fieldName] = res.url;
+                            console.log("formData", formData.value);
+                            resolve(res);
+                        } catch (error) {
+                            console.error("Upload error:", error);
+                            reject(error);
+                        }
+                    };
+                    reader.onerror = () => reject(new Error('File reading failed'));
+                    reader.readAsDataURL(file); // Use file directly instead of file.raw
+                });
+            }
+            const { generateDynamicForm, submitDynamicForm, formData, currentSchema, showEditModal, initializeFormWithData, resetFormToEmpty, closeModal, isAnyFileUploading } = useDynamicForm(addNewRecord, updateRecord, uploadAttachment);
+            const { tblColumns } = useTableColumns(schema, handleEditRecord, handleDeleteRecord);
+            const { searchQuery, filteredData, clearSearch } = useSearch(allSheetsData, schema);
+
+            watch(data, (newData) => {
+                console.log("Data changed in component:", newData);
+            }, { deep: true });
+
+            // Watch for schema changes to update table columns
+            watch(schema, (newSchema) => {
+                if (newSchema) {
+                    console.log("Schema changed:", newSchema);
+                    // The table columns will automatically update since they depend on schema
+                }
+            }, { deep: true });
+
+            // Watch for modal closing to reset editing flag
+            watch(showEditModal, (isOpen) => {
+                if (!isOpen) {
+                    isEditingRecord.value = false;
+                }
+            });
+
+            const handleNavSelect = (key) => {
+                activeNav.value = key;
+            }
+
+            const handleApplicationMenuSelect = async (applicationName) => {
+                if (applicationName) {
+                    activeApplication.value = applicationName;
+                    const currentSchema = allSchemas.value.find(schema => schema['Application Name'] === applicationName);
+                    if (currentSchema) {
+                        schema.value = JSON.parse(currentSchema.Schema);
+                        clearSearch();
+                    }
+                }
+            }
+
+            return { schema, allSchemas, selectedSchemaName, activeApplication, showEditModal, isEditingRecord, tblColumns, data, allSheetsData, filteredData, searchQuery, clearSearch, isLoading, isError, isSuccess, errorMsg, successMsg, activeNav, handleAddNewRecord, handleEditRecord, handleNavSelect, handleApplicationMenuSelect, dynamicFormComponent, generateDynamicForm, formData, currentSchema, submitDynamicForm, initializeFormWithData, resetFormToEmpty, closeModal, isAnyFileUploading, Plus, Edit, Delete, View, Search }
+        }
+    }
+
+    const app = createApp(App);
+    app.use(ElementPlus);
+
+    // Register icons globally
+    app.component('Plus', Plus);
+    app.component('Edit', Edit);
+    app.component('Delete', Delete);
+    app.component('View', View);
+    app.component('Search', Search);
+
+    // Also try registering with Element Plus icon component
+    app.component('ElIcon', ElIcon);
+
+    app.mount("#app");
+</script>
