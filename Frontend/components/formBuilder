@@ -1,0 +1,120 @@
+<div class="block">
+  <div class="level">
+    <div class="level-left">
+      <div class="level-item">
+        <h2 class="title is-4">Form Builder</h2>
+      </div>
+    </div>
+    <div class="level-right">
+      <div class="level-item">
+        <el-input v-model="formName" placeholder="Form Name" style="width: 200px">
+          <template #prefix>
+            <el-icon>
+              <Document />
+            </el-icon>
+          </template>
+        </el-input>
+      </div>
+    </div>
+  </div>
+
+  <div ref="dropZone" class="drop-zone" :class="{ 'drag-over': dragOver }" @drop="onDrop" @dragover="onDragOver" @dragleave="onDragLeave">
+    <div v-if="isLoading" class="drop-zone-loading">
+      <div class="has-text-centered">
+        <div class="custom-spinner">
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+          <div class="spinner-ring"></div>
+        </div>
+        <p>Loading form schema...</p>
+      </div>
+    </div>
+    <div v-else-if="formFields.length === 0" class="drop-zone-empty">
+      <div class="has-text-centered">
+        <i class="mdi mdi-drag mdi-48px"></i>
+        <p>Drag field types here to build your form</p>
+      </div>
+    </div>
+
+    <div v-else class="form-fields-container">
+      <div v-for="(field, index) in formFields" :key="field.id" class="form-field" :data-id="field.id">
+        <!-- Drag Handle - Left Side -->
+        <div class="drag-handle-left" title="Drag to reorder">
+          <i class="mdi mdi-drag"></i>
+        </div>
+
+        <!-- Field Content -->
+        <div class="field-content">
+          <el-row :gutter="16" align="middle">
+            <el-col :span="20">
+              <!-- Field Preview -->
+              <div class="content">
+                <el-form-item :label="field.label || field.name" :message="field.helperText">
+                  <!-- Text Input -->
+                  <el-input v-if="['text', 'email', 'password','phone'].includes(field.type)" :type="field.type" :placeholder="field.placeholder" disabled></el-input>
+
+                  <!-- Number Input -->
+                  <el-input-number v-else-if="field.type === 'number'" :placeholder="field.placeholder" disabled></el-input-number>
+
+                  <!-- Textarea -->
+                  <el-input v-else-if="field.type === 'textarea'" type="textarea" :placeholder="field.placeholder" disabled></el-input>
+
+                  <!-- Select -->
+                  <el-select v-else-if="field.type === 'select'" :placeholder="field.placeholder" disabled>
+                    <el-option v-for="option in field.options" :key="option.value" :label="option.label" :value="option.value"> </el-option>
+                  </el-select>
+
+                  <!-- Radio -->
+                  <div v-else-if="field.type === 'radio'">
+                    <el-radio v-for="option in field.options" :key="option.value" :label="option.value" disabled> {{ option.label }} </el-radio>
+                  </div>
+
+                  <!-- Checkbox -->
+                  <el-checkbox v-else-if="field.type === 'checkbox'" disabled> {{ field.label }} </el-checkbox>
+
+                  <!-- Date -->
+                  <el-date-picker v-else-if="field.type === 'date'" :placeholder="field.placeholder" disabled></el-date-picker>
+
+                  <!-- File -->
+                  <el-upload v-else-if="field.type === 'file'" disabled>
+                    <el-button type="primary">
+                      <el-icon>
+                        <Upload />
+                      </el-icon>
+                      <span>Click to upload</span>
+                    </el-button>
+                  </el-upload>
+
+                  <!-- Custom Price -->
+                  <div v-else-if="field.type === 'customPrice'" class="field has-addons">
+                    <el-input-number :placeholder="field.placeholder" disabled></el-input-number>
+                    <el-button class="button is-static">{{ field.currency || 'USD' }}</el-button>
+                  </div>
+                </el-form-item>
+
+                <div class="tags">
+                  <el-tag size="small">{{ field.type }}</el-tag>
+                  <el-tag v-if="field.required" size="small" type="danger">Required</el-tag>
+                </div>
+              </div>
+            </el-col>
+            <el-col :span="4" class="field-actions-col">
+              <div class="field-controls" title="Field actions">
+                <el-button size="small" @click="editField(field, index)">
+                  <el-icon>
+                    <Edit />
+                  </el-icon>
+                </el-button>
+                <el-button size="small" type="danger" @click="removeField(index)">
+                  <el-icon>
+                    <Delete />
+                  </el-icon>
+                </el-button>
+              </div>
+            </el-col>
+          </el-row>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
