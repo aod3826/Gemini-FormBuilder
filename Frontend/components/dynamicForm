@@ -1,0 +1,26 @@
+<div v-if="currentSchema && currentSchema.fields">
+    <div class="dynamic-form-container">
+        <h3 class="form-title">{{ currentSchema.name || 'Dynamic Form' }}</h3>
+        <p v-if="currentSchema.description" class="form-description">{{ currentSchema.description }}</p>
+
+        <component :is="generateDynamicForm(
+            currentSchema.fields, 
+            formData, 
+            false
+        )"></component>
+
+        <div class="form-actions">
+            <el-button type="primary" @click="submitDynamicForm" :loading="isSubmitting" :disabled="isAnyFileUploading">
+                {{ isAnyFileUploading ? 'Uploading Files...' : 'Submit Form' }}
+            </el-button>
+            <el-button @click="resetForm">Reset</el-button>
+            <el-button @click="closeModal">Cancel</el-button>
+        </div>
+    </div>
+</div>
+
+<div v-else class="no-schema-message">
+    <el-empty description="No form schema available">
+        <el-button type="primary">Create Form</el-button>
+    </el-empty>
+</div>
