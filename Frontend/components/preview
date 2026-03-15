@@ -1,0 +1,116 @@
+<div class="block">
+  <h3 class="title is-5">Form Preview</h3>
+  <div class="form-preview">
+    <div v-if="isLoading" class="preview-loading">
+      <div class="custom-spinner">
+        <div class="spinner-ring"></div>
+        <div class="spinner-ring"></div>
+        <div class="spinner-ring"></div>
+      </div>
+      <p>Loading form preview...</p>
+    </div>
+    <div v-else-if="formFields.length === 0" class="preview-empty">
+      <div class="has-text-centered">
+        <i class="mdi mdi-form-select mdi-48px"></i>
+        <p>No fields added yet. Add some fields in the Form Builder to see the preview.</p>
+      </div>
+    </div>
+    <div v-else>
+      <el-form label-width="300px">
+        <el-form-item v-for="field in formFields" :key="field.id" :label="(field.label || field.name) + (field.required ? ' *' : '')">
+          <!-- Text, Email, Password inputs -->
+          <div v-if="['text', 'email', 'password'].includes(field.type)">
+            <el-input :type="field.type" :placeholder="field.placeholder" />
+          </div>
+
+          <!-- Phone input -->
+          <div v-else-if="field.type === 'phone'">
+            <el-input type="tel" :placeholder="field.placeholder || 'Enter phone number...'" :pattern="field.pattern" :minlength="field.minLength || undefined" :maxlength="field.maxLength || undefined" />
+          </div>
+
+          <!-- Number input -->
+          <div v-else-if="field.type === 'number'">
+            <el-input-number :placeholder="field.placeholder" />
+          </div>
+
+          <!-- Textarea -->
+          <div v-else-if="field.type === 'textarea'">
+            <el-input :placeholder="field.placeholder" :rows="parseInt(field.rows) || 3" type="textarea" :minlength="field.minLength || undefined" :maxlength="field.maxLength || undefined" />
+          </div>
+
+          <!-- Select dropdown -->
+          <div v-else-if="field.type === 'select'">
+            <el-select :placeholder="field.placeholder || 'Select an option'">
+              <el-option v-for="option in getFieldOptions(field)" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
+          </div>
+
+          <!-- Radio group -->
+          <div v-else-if="field.type === 'radio'">
+            <el-radio-group>
+              <el-radio v-for="option in getFieldOptions(field)" :key="option.value" :label="option.value"> {{ option.label }} </el-radio>
+            </el-radio-group>
+          </div>
+
+          <!-- Checkbox group -->
+          <div v-else-if="field.type === 'checkbox'">
+            <el-checkbox-group>
+              <el-checkbox v-for="option in getFieldOptions(field)" :key="option.value" :label="option.value"> {{ option.label }} </el-checkbox>
+            </el-checkbox-group>
+          </div>
+
+          <!-- Toggle switch -->
+          <div v-else-if="field.type === 'toggle'">
+            <el-switch v-model="field.checked" :active-text="field.label || field.name" />
+          </div>
+
+          <!-- Date picker -->
+          <div v-else-if="field.type === 'date'">
+            <el-date-picker :placeholder="field.placeholder || 'Select date'" />
+          </div>
+
+          <!-- File upload -->
+          <div v-else-if="field.type === 'file'">
+            <el-upload>
+              <el-button type="primary" class="file-upload-btn">
+                <span class="upload-icon">📁</span>
+                <span>Upload File</span>
+              </el-button>
+            </el-upload>
+          </div>
+
+          <!-- Image upload -->
+          <div v-else-if="field.type === 'image'">
+            <el-upload list-type="picture-card">
+              <el-icon>
+                <Plus />
+              </el-icon>
+            </el-upload>
+          </div>
+
+          <!-- Link input -->
+          <div v-else-if="field.type === 'link'">
+            <el-input type="url" :placeholder="field.placeholder || 'Enter URL...'" />
+          </div>
+
+          <!-- Custom price input -->
+          <div v-else-if="field.type === 'customPrice'" class="price-input-container">
+            <el-input-number :placeholder="field.placeholder" :step="0.01" :precision="2" />
+            <el-button class="currency-label"> {{ field.currency || currency || 'USD' }} </el-button>
+          </div>
+
+          <!-- Default text input for unknown types -->
+          <div v-else>
+            <el-input :placeholder="field.placeholder || `Enter ${field.label || field.name}`" />
+          </div>
+
+          <p v-if="field.helperText" class="help">{{ field.helperText }}</p>
+        </el-form-item>
+
+        <div class="form-actions">
+          <el-button type="primary">Submit</el-button>
+        </div>
+      </el-form>
+    </div>
+  </div>
+</div>
